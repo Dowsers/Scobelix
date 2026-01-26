@@ -154,10 +154,10 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
             if target > 1 and loader.lines[target][1] == "jumpdest":
                 target += 1
 
-            @timeout_decorator.timeout(60 * 3, timeout_exception=TimeoutInterrupt)
+            @timeout_decorator.timeout(60 * 12, timeout_exception=TimeoutInterrupt)
             def dec():
                 logger.info(" -> Interpreting EVM on function...")
-                trace = VM(loader).run(target, stack=stack, timeout=60)
+                trace = VM(loader).run(target, stack=stack, timeout=600)
                 explain("Initial decompiled trace", trace[1:])
 
                 if "--explain" in sys.argv:
@@ -167,7 +167,7 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
                     explain("Without assembly", trace)
 
                 logger.info(" -> Cleaning up AST, identifying loops...")
-                trace = make_whiles(trace, timeout=60)
+                trace = make_whiles(trace, timeout=600)
                 explain("final", trace)
 
                 if "--explain" in sys.argv:
@@ -205,7 +205,8 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
         decompilation.json = contract.json()
         # This would raise a TypeError if it's not serializable, which is an
         # important assumption people can make.
-        json.dump(decompilation.json, open(os.devnull, "w"))
+        with open(os.devnull, "w") as f:
+            json.dump(decompilation.json, f)
     except Exception:
         logger.exception("Failed json serialization.")
         decompilation.json = {}

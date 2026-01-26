@@ -26,7 +26,7 @@ cache_sigs = {
     False: {},
 }
 
-LOADER_TIMEOUT = 60
+LOADER_TIMEOUT = 120
 
 
 class Loader(EasyCopy):

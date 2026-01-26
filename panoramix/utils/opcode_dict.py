@@ -69,11 +69,13 @@ opcode_dict = {
     0x41: "coinbase",
     0x42: "timestamp",
     0x43: "number",
-    0x44: "difficulty",
+    0x44: "prevrandao",
     0x45: "gaslimit",
     0x46: "chainid",
     0x47: "selfbalance",
     0x48: "basefee",
+    0x49: "blobhash",
+    0x4A: "blobbasefee",
     #
     # Stack, Memory, Storage and Flow Operations
     #
@@ -89,6 +91,9 @@ opcode_dict = {
     0x59: "msize",
     0x5A: "gas",
     0x5B: "jumpdest",
+    0x5C: "tload",
+    0x5D: "tstore",
+    0x5E: "mcopy",
     #
     # Push Operations
     #
@@ -213,6 +218,7 @@ stack_diffs = {
     "timestamp": 1,
     "number": 1,
     "difficulty": 1,
+    "prevrandao": 1,
     "gaslimit": 1,
     "lt": -1,
     "gt": -1,
@@ -247,6 +253,8 @@ stack_diffs = {
     "extcodehash": 0,
     "extcodecopy": -4,
     "returndatasize": 1,
+    "blobhash": 0,
+    "blobbasefee": 1,
     "returndatacopy": -3,
     "dup_XX": 1,
     "stop": 0,
@@ -275,6 +283,10 @@ stack_diffs = {
     "push": 1,
     "dup": 1,
     "swap": 0,
+    "mcopy": -3,
+    "tload": 0,
+    "tstore": -2,
+    "push0": 1,
     "push1": 1,
     "push2": 1,
     "push3": 1,

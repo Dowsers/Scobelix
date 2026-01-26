@@ -281,6 +281,15 @@ def split_setmem(line):
 
     res = []
     for size, offset, split_val in post_split:
+        if opcode(mem_idx) == "range":
+            size_bytes, size_bits = to_bytes(size)
+            offset_bytes, offset_bits = to_bytes(offset)
+            if (
+                size_bits != 0
+                or offset_bits != 0
+                or safe_le_op(add_op(size_bytes, offset_bytes), mem_idx[2]) is not True
+            ):
+                return [line]
         try:
             split_idx = apply_mask_to_range(mem_idx, size, offset)
         except Exception:

@@ -1,0 +1,3472 @@
+{
+  "0x009a9b7b": {
+    "inputs": [],
+    "name": "currentTokenId"
+  },
+  "0x00fdd58e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "balanceOf"
+  },
+  "0x012f52ee": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "escrows"
+  },
+  "0x0170a887": {
+    "inputs": [],
+    "name": "getDust"
+  },
+  "0x0186a423": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "string"
+      }
+    ],
+    "name": "products"
+  },
+  "0x01e1d114": {
+    "inputs": [],
+    "name": "totalAssets"
+  },
+  "0x0266f044": {
+    "inputs": [],
+    "name": "reservePool"
+  },
+  "0x027ba49d": {
+    "inputs": [],
+    "name": "getChainStorage"
+  },
+  "0x02baf1b0": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalSupplyByAsset"
+  },
+  "0x02fb0c5e": {
+    "inputs": [],
+    "name": "active"
+  },
+  "0x047fc9aa": {
+    "inputs": [],
+    "name": "supply"
+  },
+  "0x04bf1d6b": {
+    "inputs": [],
+    "name": "wrappedCoinAddress"
+  },
+  "0x04ccb84e": {
+    "inputs": [],
+    "name": "getMaxCurrencyId"
+  },
+  "0x057c7031": {
+    "inputs": [],
+    "name": "getStakedEyePriceInfo"
+  },
+  "0x06661abd": {
+    "inputs": [],
+    "name": "count"
+  },
+  "0x068bcd8d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPool"
+  },
+  "0x06edbf77": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "bool"
+      },
+      {
+        "name": "param3",
+        "type": "bool"
+      }
+    ],
+    "name": "fairPrice"
+  },
+  "0x06fdde03": {
+    "inputs": [],
+    "name": "name"
+  },
+  "0x0713051d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "liquidities"
+  },
+  "0x07a2d13a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "convertToAssets"
+  },
+  "0x081e3eda": {
+    "inputs": [],
+    "name": "poolLength"
+  },
+  "0x08f1bdaa": {
+    "inputs": [],
+    "name": "generateAssetData"
+  },
+  "0x0902f1ac": {
+    "inputs": [],
+    "name": "getReserves"
+  },
+  "0x0937eb54": {
+    "inputs": [],
+    "name": "accountedBalance"
+  },
+  "0x0974f58f": {
+    "inputs": [],
+    "name": "getAddressesProviderFactory"
+  },
+  "0x0a355d7d": {
+    "inputs": [],
+    "name": "vaultDebtVal"
+  },
+  "0x0ab51bac": {
+    "inputs": [],
+    "name": "aum"
+  },
+  "0x0b3eb970": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getTokenState"
+  },
+  "0x0ba9c976": {
+    "inputs": [],
+    "name": "getAccDeposit"
+  },
+  "0x0d8f8a90": {
+    "inputs": [],
+    "name": "getRawFundBalancesAndPrices"
+  },
+  "0x0de15fd9": {
+    "inputs": [],
+    "name": "collateralCurrency"
+  },
+  "0x0dfe1681": {
+    "inputs": [],
+    "name": "token0"
+  },
+  "0x0fb354f9": {
+    "inputs": [],
+    "name": "lpTokenMaster"
+  },
+  "0x0fc49490": {
+    "inputs": [],
+    "name": "loansValue"
+  },
+  "0x0fc63d10": {
+    "inputs": [],
+    "name": "tokenA"
+  },
+  "0x100ddfa9": {
+    "inputs": [],
+    "name": "balanceWithInvested"
+  },
+  "0x1010b58c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPoolAtIndex"
+  },
+  "0x10b6f3be": {
+    "inputs": [],
+    "name": "getFundBalances"
+  },
+  "0x10c1c103": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "stakedAmounts"
+  },
+  "0x10d3d22e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getOracle"
+  },
+  "0x10ef159f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      },
+      {
+        "name": "param3",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cdpTvl"
+  },
+  "0x11d8293e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "instanceAt"
+  },
+  "0x12a2fa76": {
+    "inputs": [],
+    "name": "positionIdCounter"
+  },
+  "0x1322d954": {
+    "inputs": [],
+    "name": "getUnderlyingBalances"
+  },
+  "0x13eb9224": {
+    "inputs": [],
+    "name": "getGeyserData"
+  },
+  "0x146ca531": {
+    "inputs": [],
+    "name": "round"
+  },
+  "0x148a95ea": {
+    "inputs": [],
+    "name": "getBaseData"
+  },
+  "0x1526fe27": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "poolInfo"
+  },
+  "0x15d8eeba": {
+    "inputs": [],
+    "name": "SUSD"
+  },
+  "0x1698ee82": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "uint24"
+      }
+    ],
+    "name": "getPool"
+  },
+  "0x16f0115b": {
+    "inputs": [],
+    "name": "pool"
+  },
+  "0x172c48c7": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "collateralTokens"
+  },
+  "0x18160ddd": {
+    "inputs": [],
+    "name": "totalSupply"
+  },
+  "0x182df0f5": {
+    "inputs": [],
+    "name": "exchangeRateStored"
+  },
+  "0x194d28a6": {
+    "inputs": [],
+    "name": "getPoolTokenAddress"
+  },
+  "0x195426ec": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "pendingSushi"
+  },
+  "0x1959a002": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "userInfo"
+  },
+  "0x199cbc54": {
+    "inputs": [],
+    "name": "totalVested"
+  },
+  "0x19b64015": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "connectorTokens"
+  },
+  "0x19babe8b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "vaultTvlUsdc"
+  },
+  "0x1a595f65": {
+    "inputs": [],
+    "name": "getCurrentPool"
+  },
+  "0x1a686502": {
+    "inputs": [],
+    "name": "liquidity"
+  },
+  "0x1afbb7a4": {
+    "inputs": [],
+    "name": "borrowedAmount"
+  },
+  "0x1c1951f4": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLendingPool"
+  },
+  "0x1c93e128": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getFutureVaultAt"
+  },
+  "0x1cdc4700": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getCompoundedLUSDDeposit"
+  },
+  "0x1cfd6e6f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "CreateEscrow"
+  },
+  "0x1d3ce398": {
+    "inputs": [],
+    "name": "getBassets"
+  },
+  "0x1d5aa6d8": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "pairByTokens"
+  },
+  "0x1e3dd18b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allPairs"
+  },
+  "0x1e5f74a1": {
+    "inputs": [],
+    "name": "getPTAddress"
+  },
+  "0x1e8ed19e": {
+    "inputs": [],
+    "name": "PFILPerToken"
+  },
+  "0x1ecba7f5": {
+    "inputs": [],
+    "name": "outstandingAssets"
+  },
+  "0x1f1fcd51": {
+    "inputs": [],
+    "name": "want"
+  },
+  "0x1f7b6d32": {
+    "inputs": [],
+    "name": "length"
+  },
+  "0x1f8e2620": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "getConvertersBySmartTokens"
+  },
+  "0x1ff517ff": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalDebt"
+  },
+  "0x200d2ed2": {
+    "inputs": [],
+    "name": "status"
+  },
+  "0x20e7f50b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "veTokensIdsOf"
+  },
+  "0x20f6d07c": {
+    "inputs": [],
+    "name": "totalAssetBorrow"
+  },
+  "0x217a4b70": {
+    "inputs": [],
+    "name": "quoteToken"
+  },
+  "0x21df0da7": {
+    "inputs": [],
+    "name": "getToken"
+  },
+  "0x23746eb8": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "int128"
+      }
+    ],
+    "name": "coins"
+  },
+  "0x23cb6c74": {
+    "inputs": [],
+    "name": "premiumCollected"
+  },
+  "0x2495a599": {
+    "inputs": [],
+    "name": "underlyingToken"
+  },
+  "0x24bbab8b": {
+    "inputs": [],
+    "name": "COLLATERAL"
+  },
+  "0x2630c12f": {
+    "inputs": [],
+    "name": "priceOracle"
+  },
+  "0x26c25962": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "tranches"
+  },
+  "0x270bf52e": {
+    "inputs": [],
+    "name": "everRiseAddress"
+  },
+  "0x27e235e3": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "balances"
+  },
+  "0x2a2a115b": {
+    "inputs": [],
+    "name": "getAllOTokens"
+  },
+  "0x2acada4d": {
+    "inputs": [],
+    "name": "getAllAssets"
+  },
+  "0x2c11db0c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "getShortingPair"
+  },
+  "0x2c46e20b": {
+    "inputs": [],
+    "name": "priceSALT"
+  },
+  "0x2d48f081": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "peekPools"
+  },
+  "0x2f745c59": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenOfOwnerByIndex"
+  },
+  "0x2f847fbe": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalDebtAmount"
+  },
+  "0x2fc11c0f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "pendingInterest"
+  },
+  "0x3018776c": {
+    "inputs": [],
+    "name": "getTvlTokenAmount"
+  },
+  "0x312f6b83": {
+    "inputs": [],
+    "name": "STAKED_TOKEN"
+  },
+  "0x313ce567": {
+    "inputs": [],
+    "name": "decimals"
+  },
+  "0x32b573e1": {
+    "inputs": [],
+    "name": "totalChannelToken"
+  },
+  "0x32bc68be": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "arrayPerlinPools"
+  },
+  "0x32da80a3": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "markdown"
+  },
+  "0x334f7ac5": {
+    "inputs": [],
+    "name": "moduleCount"
+  },
+  "0x33604bc6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getGlobalDebtValueWithPendingInterest"
+  },
+  "0x342c02b1": {
+    "inputs": [],
+    "name": "tokenScale"
+  },
+  "0x355274ea": {
+    "inputs": [],
+    "name": "cap"
+  },
+  "0x3552c62f": {
+    "inputs": [],
+    "name": "getNav"
+  },
+  "0x35c62bc2": {
+    "inputs": [],
+    "name": "numPools"
+  },
+  "0x35ea6a75": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getReserveData"
+  },
+  "0x36bdee74": {
+    "inputs": [],
+    "name": "totalETH"
+  },
+  "0x36dd1048": {
+    "inputs": [],
+    "name": "balanceLPinSystem"
+  },
+  "0x375a7cba": {
+    "inputs": [],
+    "name": "allMarkets"
+  },
+  "0x37950f73": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "vaultERC2626TvlUsdc"
+  },
+  "0x3850c7bd": {
+    "inputs": [],
+    "name": "slot0"
+  },
+  "0x38d52e0f": {
+    "inputs": [],
+    "name": "asset"
+  },
+  "0x38fff2d0": {
+    "inputs": [],
+    "name": "getPoolId"
+  },
+  "0x392e53cd": {
+    "inputs": [],
+    "name": "isInitialized"
+  },
+  "0x3a1d5d8e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "pool_list"
+  },
+  "0x3a98ef39": {
+    "inputs": [],
+    "name": "totalShares"
+  },
+  "0x3af9e669": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "balanceOfUnderlying"
+  },
+  "0x3b1d21a2": {
+    "inputs": [],
+    "name": "getCash"
+  },
+  "0x3b22fc03": {
+    "inputs": [],
+    "name": "lpSupply"
+  },
+  "0x3ba0b9a9": {
+    "inputs": [],
+    "name": "exchangeRate"
+  },
+  "0x3be273a9": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getMlp"
+  },
+  "0x3be675d3": {
+    "inputs": [],
+    "name": "calculateTotals"
+  },
+  "0x3ca967f3": {
+    "inputs": [],
+    "name": "getCurrentExchangeRate"
+  },
+  "0x3da5ffc0": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "queuedForWithdrawal"
+  },
+  "0x3ec03025": {
+    "inputs": [],
+    "name": "allAllowedTokens"
+  },
+  "0x3f398cd8": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "wMEMOToMEMO"
+  },
+  "0x3f7c4ffa": {
+    "inputs": [],
+    "name": "maxSALT"
+  },
+  "0x40a65823": {
+    "inputs": [],
+    "name": "totalStakeTokens"
+  },
+  "0x41976e09": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getPrice"
+  },
+  "0x41d1de97": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allPools"
+  },
+  "0x4249719f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "valuation"
+  },
+  "0x42da4eb3": {
+    "inputs": [],
+    "name": "wantLockedTotal"
+  },
+  "0x42fda07c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "shuttleTvlUsd"
+  },
+  "0x43479885": {
+    "inputs": [],
+    "name": "whitelistedPools"
+  },
+  "0x44a58781": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "monitors"
+  },
+  "0x44d00f82": {
+    "inputs": [],
+    "name": "getVaults"
+  },
+  "0x4651f080": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "roundPools"
+  },
+  "0x47a695a7": {
+    "inputs": [],
+    "name": "getTotalPendingDeposit"
+  },
+  "0x47bd3718": {
+    "inputs": [],
+    "name": "totalBorrows"
+  },
+  "0x481bf0b8": {
+    "inputs": [],
+    "name": "totalQueuedWithdrawals"
+  },
+  "0x48972abd": {
+    "inputs": [],
+    "name": "hecoPoolId"
+  },
+  "0x4903b0d1": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "balances"
+  },
+  "0x4ac8eb5f": {
+    "inputs": [],
+    "name": "totalCollateral"
+  },
+  "0x4ae26ea1": {
+    "inputs": [],
+    "name": "getPublicPools"
+  },
+  "0x4b0ee02a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalBalanceOf"
+  },
+  "0x4b70d84b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "cTokenMetadataAll"
+  },
+  "0x4bde38c8": {
+    "inputs": [],
+    "name": "platform"
+  },
+  "0x4c19386c": {
+    "inputs": [],
+    "name": "totalBorrowed"
+  },
+  "0x4c541566": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "assetAtIndex"
+  },
+  "0x4c68df67": {
+    "inputs": [],
+    "name": "totalReserve"
+  },
+  "0x4cd18577": {
+    "inputs": [],
+    "name": "allVaultsLength"
+  },
+  "0x4d340238": {
+    "inputs": [],
+    "name": "totalNIZI"
+  },
+  "0x4d770570": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getCapitalUtilizationRatio"
+  },
+  "0x4dad2624": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "address"
+      }
+    ],
+    "name": "getRoutablePair"
+  },
+  "0x4e319b2c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAssetTokens"
+  },
+  "0x4e89a711": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getUnderlying"
+  },
+  "0x4ebad18e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint16"
+      }
+    ],
+    "name": "getCurrency"
+  },
+  "0x4f39059c": {
+    "inputs": [],
+    "name": "curveToken"
+  },
+  "0x4f64b2be": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokens"
+  },
+  "0x4f6ccce7": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenByIndex"
+  },
+  "0x50d25bcd": {
+    "inputs": [],
+    "name": "latestAnswer"
+  },
+  "0x50f820e6": {
+    "inputs": [],
+    "name": "getAllAgentsCount"
+  },
+  "0x50fd7367": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "list"
+  },
+  "0x51394094": {
+    "inputs": [],
+    "name": "getAllShortables"
+  },
+  "0x519f5099": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPositionInfo"
+  },
+  "0x51ed6a30": {
+    "inputs": [],
+    "name": "stakeToken"
+  },
+  "0x52059756": {
+    "inputs": [],
+    "name": "supplyToken"
+  },
+  "0x523bca09": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLOVVaultMetadata"
+  },
+  "0x52963c8b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getUncollectedFees"
+  },
+  "0x55b812a8": {
+    "inputs": [],
+    "name": "tickUpper"
+  },
+  "0x56da7c28": {
+    "inputs": [],
+    "name": "futureVaultCount"
+  },
+  "0x570ca735": {
+    "inputs": [],
+    "name": "operator"
+  },
+  "0x574712af": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "moduleAtIndex"
+  },
+  "0x574f2ba3": {
+    "inputs": [],
+    "name": "allPairsLength"
+  },
+  "0x575a86b2": {
+    "inputs": [],
+    "name": "masterChef"
+  },
+  "0x58f67c0b": {
+    "inputs": [],
+    "name": "totalQueuedDeposits"
+  },
+  "0x594665b5": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint16"
+      }
+    ],
+    "name": "getPrimeCashHoldingsOracle"
+  },
+  "0x5976c67c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "mapSynth_EMP"
+  },
+  "0x59c4f905": {
+    "inputs": [],
+    "name": "tickLower"
+  },
+  "0x59d2fea6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getPoolSummary"
+  },
+  "0x59eb8224": {
+    "inputs": [],
+    "name": "trancheCount"
+  },
+  "0x59f4f351": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_underlying_balances"
+  },
+  "0x5aaf8252": {
+    "inputs": [],
+    "name": "stakingPoolSum"
+  },
+  "0x5ac44282": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getBatch"
+  },
+  "0x5add8438": {
+    "inputs": [],
+    "name": "circulatingSALT"
+  },
+  "0x5b1dac60": {
+    "inputs": [],
+    "name": "getSharePrice"
+  },
+  "0x5c074f44": {
+    "inputs": [],
+    "name": "pendingDeposits"
+  },
+  "0x5c75347a": {
+    "inputs": [],
+    "name": "currencyBalance"
+  },
+  "0x5cd8d064": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "bamms"
+  },
+  "0x5cf3b15f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalToken"
+  },
+  "0x5dcb4959": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getCompleteStrategy"
+  },
+  "0x5e1762a0": {
+    "inputs": [],
+    "name": "whitelistedTokens"
+  },
+  "0x5e3efbab": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getStratUnderlying"
+  },
+  "0x5f515226": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "checkBalance"
+  },
+  "0x5f5817e3": {
+    "inputs": [],
+    "name": "getActiveTokens"
+  },
+  "0x5f64b55b": {
+    "inputs": [],
+    "name": "tokenB"
+  },
+  "0x5fcbd285": {
+    "inputs": [],
+    "name": "lpToken"
+  },
+  "0x60a8a931": {
+    "inputs": [],
+    "name": "getAlliTokens"
+  },
+  "0x60a8b18a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getSupportedAsset"
+  },
+  "0x6103341d": {
+    "inputs": [],
+    "name": "pendingMlpCount"
+  },
+  "0x61f8e66f": {
+    "inputs": [],
+    "name": "poolInfos"
+  },
+  "0x621fd507": {
+    "inputs": [],
+    "name": "isiToken"
+  },
+  "0x626be567": {
+    "inputs": [],
+    "name": "totalToken"
+  },
+  "0x626e1ae7": {
+    "inputs": [],
+    "name": "getTotalFees"
+  },
+  "0x6340f2b2": {
+    "inputs": [],
+    "name": "totalPegCollateral"
+  },
+  "0x6396f584": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDepositTokenSupply"
+  },
+  "0x63f31d2c": {
+    "inputs": [],
+    "name": "totalCollateralAmount"
+  },
+  "0x64d414bf": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      },
+      {
+        "name": "param3",
+        "type": "uint256"
+      }
+    ],
+    "name": "getTokens"
+  },
+  "0x659d4f5c": {
+    "inputs": [],
+    "name": "getRegisteredPools"
+  },
+  "0x65f400ed": {
+    "inputs": [],
+    "name": "foreignTokenCount"
+  },
+  "0x673a2a1f": {
+    "inputs": [],
+    "name": "getPools"
+  },
+  "0x67e4ac2c": {
+    "inputs": [],
+    "name": "getAssets"
+  },
+  "0x681390e6": {
+    "inputs": [],
+    "name": "getSyntheticTokens"
+  },
+  "0x69a0125f": {
+    "inputs": [],
+    "name": "underlierScale"
+  },
+  "0x6a7d9ff9": {
+    "inputs": [],
+    "name": "avatarLength"
+  },
+  "0x6af0a9ae": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalSupplyAmount"
+  },
+  "0x6b2fa374": {
+    "inputs": [],
+    "name": "currencyToken"
+  },
+  "0x6b556ce3": {
+    "inputs": [],
+    "name": "oneTokenCount"
+  },
+  "0x6db64e63": {
+    "inputs": [],
+    "name": "underlierToken"
+  },
+  "0x6e2ede03": {
+    "inputs": [],
+    "name": "getCollateralMarketsLength"
+  },
+  "0x6e4ca4ab": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getActiveOrderId"
+  },
+  "0x6e5105c2": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPoolTotalDeposited"
+  },
+  "0x6ec354f8": {
+    "inputs": [],
+    "name": "queuedDepositsTotalAmount"
+  },
+  "0x6eff35ab": {
+    "inputs": [],
+    "name": "getNativeIBPrice"
+  },
+  "0x6f307dc3": {
+    "inputs": [],
+    "name": "underlying"
+  },
+  "0x6f3a3bfc": {
+    "inputs": [],
+    "name": "totalStablecoinIssued"
+  },
+  "0x6f63cac4": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getFutureAMMPool"
+  },
+  "0x6fe0dab8": {
+    "inputs": [],
+    "name": "getStatFields"
+  },
+  "0x703bafd5": {
+    "inputs": [],
+    "name": "vaultToken"
+  },
+  "0x70a08231": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "balanceOf"
+  },
+  "0x70ed0ada": {
+    "inputs": [],
+    "name": "getEthBalance"
+  },
+  "0x7158da7c": {
+    "inputs": [],
+    "name": "underlyingAsset"
+  },
+  "0x71a97305": {
+    "inputs": [],
+    "name": "assets"
+  },
+  "0x722713f7": {
+    "inputs": [],
+    "name": "balanceOf"
+  },
+  "0x7284e416": {
+    "inputs": [],
+    "name": "description"
+  },
+  "0x72f702f3": {
+    "inputs": [],
+    "name": "stakingToken"
+  },
+  "0x736158d0": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "borrowableBalance"
+  },
+  "0x73730d4c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "isPositionRunning"
+  },
+  "0x73c9da86": {
+    "inputs": [],
+    "name": "collateralTokenCount"
+  },
+  "0x753c7d52": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allMlp"
+  },
+  "0x76cdb03b": {
+    "inputs": [],
+    "name": "bank"
+  },
+  "0x7758f3fa": {
+    "inputs": [],
+    "name": "underlyer"
+  },
+  "0x778154f2": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLlamaPayContractByIndex"
+  },
+  "0x77c7b8fc": {
+    "inputs": [],
+    "name": "getPricePerFullShare"
+  },
+  "0x78a45a24": {
+    "inputs": [],
+    "name": "synthCount"
+  },
+  "0x78b92636": {
+    "inputs": [],
+    "name": "getCollaterals"
+  },
+  "0x78ed5d1f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "lpToken"
+  },
+  "0x79b846fd": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockableToken"
+  },
+  "0x79ba5097": {
+    "inputs": [],
+    "name": "acceptOwnership"
+  },
+  "0x7ada7400": {
+    "inputs": [],
+    "name": "balanceState"
+  },
+  "0x7afc2ef1": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "collateralTokenAtIndex"
+  },
+  "0x7c3651ae": {
+    "inputs": [],
+    "name": "getRewardsContributionToNav"
+  },
+  "0x7d882097": {
+    "inputs": [],
+    "name": "totalDeposits"
+  },
+  "0x7e27c50f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint128"
+      },
+      {
+        "name": "param2",
+        "type": "uint128"
+      }
+    ],
+    "name": "liquidityNodes"
+  },
+  "0x7e5a4eb9": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getCToken"
+  },
+  "0x7f2277b4": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "poolIsListed"
+  },
+  "0x7f45c4c3": {
+    "inputs": [],
+    "name": "getLiquidityPools"
+  },
+  "0x800bd5c8": {
+    "inputs": [],
+    "name": "getLengths"
+  },
+  "0x8014bd97": {
+    "inputs": [],
+    "name": "pmmAddr"
+  },
+  "0x809aab92": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockers"
+  },
+  "0x80d04de8": {
+    "inputs": [],
+    "name": "totalDelegated"
+  },
+  "0x80f55605": {
+    "inputs": [],
+    "name": "market"
+  },
+  "0x80ffbb88": {
+    "inputs": [],
+    "name": "shuttlesDeployed"
+  },
+  "0x817b1cd2": {
+    "inputs": [],
+    "name": "totalStaked"
+  },
+  "0x820efad0": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "borrowableTvlUsd"
+  },
+  "0x8267f649": {
+    "inputs": [],
+    "name": "openMarkets"
+  },
+  "0x8285ef40": {
+    "inputs": [],
+    "name": "totalBorrow"
+  },
+  "0x82af54c9": {
+    "inputs": [],
+    "name": "vaultsLength"
+  },
+  "0x82b86600": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint8"
+      }
+    ],
+    "name": "getToken"
+  },
+  "0x832eea0c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getProviderBalance"
+  },
+  "0x834d5fac": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "avatars"
+  },
+  "0x85d75025": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getTokenWallet"
+  },
+  "0x8618d38d": {
+    "inputs": [],
+    "name": "totalRealisedLiquidity"
+  },
+  "0x86e987d9": {
+    "inputs": [],
+    "name": "getAllTradables"
+  },
+  "0x870bd025": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "address"
+      }
+    ],
+    "name": "getRoutableShortingPair"
+  },
+  "0x87269729": {
+    "inputs": [],
+    "name": "sharePrice"
+  },
+  "0x88402688": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint8"
+      },
+      {
+        "name": "param2",
+        "type": "uint8"
+      }
+    ],
+    "name": "getPoolStaticInfo"
+  },
+  "0x893d20e8": {
+    "inputs": [],
+    "name": "getOwner"
+  },
+  "0x89404a79": {
+    "inputs": [],
+    "name": "getTotalWithdrawn"
+  },
+  "0x898d846f": {
+    "inputs": [],
+    "name": "getCurrentLockedTokens"
+  },
+  "0x89afb5b7": {
+    "inputs": [],
+    "name": "getSnxBalance"
+  },
+  "0x8af1c8d7": {
+    "inputs": [],
+    "name": "lendingPairMaster"
+  },
+  "0x8b0e9f3f": {
+    "inputs": [],
+    "name": "totalStake"
+  },
+  "0x8ba34470": {
+    "inputs": [],
+    "name": "concrete"
+  },
+  "0x8c788de0": {
+    "inputs": [],
+    "name": "poolsCount"
+  },
+  "0x8cd8854f": {
+    "inputs": [],
+    "name": "getFYTAddress"
+  },
+  "0x8d4e4083": {
+    "inputs": [],
+    "name": "isFinalized"
+  },
+  "0x8d50f59f": {
+    "inputs": [],
+    "name": "erc20Deposit"
+  },
+  "0x8d654023": {
+    "inputs": [],
+    "name": "totalVaults"
+  },
+  "0x8d852391": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "totalTvlUsdc"
+  },
+  "0x8da5cb5b": {
+    "inputs": [],
+    "name": "owner"
+  },
+  "0x8dd930d8": {
+    "inputs": [],
+    "name": "vaultsList"
+  },
+  "0x8e1f8525": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "cdpi"
+  },
+  "0x8e8f294b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "markets"
+  },
+  "0x8f32d59b": {
+    "inputs": [],
+    "name": "isOwner"
+  },
+  "0x8f98c646": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allPuts"
+  },
+  "0x8fb807c5": {
+    "inputs": [],
+    "name": "totalAssetSupply"
+  },
+  "0x9010d07c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRoleMember"
+  },
+  "0x907448ed": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "quotePotentialWithdraw"
+  },
+  "0x9094a91e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allVaults"
+  },
+  "0x92668ecb": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "get_id_info"
+  },
+  "0x927c9b01": {
+    "inputs": [],
+    "name": "claimableBaseYield"
+  },
+  "0x92e3cc2d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_balances"
+  },
+  "0x9358928b": {
+    "inputs": [],
+    "name": "circulatingSupply"
+  },
+  "0x935fbe8c": {
+    "inputs": [],
+    "name": "poolsInfo"
+  },
+  "0x93f1a40b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "userInfo"
+  },
+  "0x940494f1": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_n_coins"
+  },
+  "0x945eb764": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getPoolAmount"
+  },
+  "0x94c4fa85": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getCategoryToken"
+  },
+  "0x94f7e23e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "slotBaseInfo"
+  },
+  "0x9522a80a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "summary"
+  },
+  "0x956aae3a": {
+    "inputs": [],
+    "name": "pool_count"
+  },
+  "0x95b4c467": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getSubscribeNav"
+  },
+  "0x95cade97": {
+    "inputs": [],
+    "name": "checkInvestedLast"
+  },
+  "0x95d89b41": {
+    "inputs": [],
+    "name": "symbol"
+  },
+  "0x968ed600": {
+    "inputs": [],
+    "name": "totalFunds"
+  },
+  "0x96eaa53d": {
+    "inputs": [],
+    "name": "getAllProxyLendables"
+  },
+  "0x97016083": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "poolsReservesInfo"
+  },
+  "0x97331bf9": {
+    "inputs": [],
+    "name": "getAllVaults"
+  },
+  "0x976e2a4d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "stakedMlpAmount"
+  },
+  "0x9816f473": {
+    "inputs": [],
+    "name": "getUnderlying"
+  },
+  "0x9852099c": {
+    "inputs": [],
+    "name": "depositId"
+  },
+  "0x9895880f": {
+    "inputs": [],
+    "name": "tokenInfoRegistry"
+  },
+  "0x99530b06": {
+    "inputs": [],
+    "name": "pricePerShare"
+  },
+  "0x99c91a64": {
+    "inputs": [],
+    "name": "underlyingTokenBalance"
+  },
+  "0x99d50d5d": {
+    "inputs": [],
+    "name": "getComponents"
+  },
+  "0x99fbab88": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "positions"
+  },
+  "0x9ac90d3d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_coins"
+  },
+  "0x9b46baaf": {
+    "inputs": [],
+    "name": "yCrvDistribution"
+  },
+  "0x9c2174b3": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "collateralTvlUsd"
+  },
+  "0x9d63848a": {
+    "inputs": [],
+    "name": "tokens"
+  },
+  "0x9dc4ac8a": {
+    "inputs": [],
+    "name": "getFarms"
+  },
+  "0x9e2c58ca": {
+    "inputs": [],
+    "name": "tokenList"
+  },
+  "0x9e59e598": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "tokenIdsOfOwner"
+  },
+  "0x9ee2addd": {
+    "inputs": [],
+    "name": "trancheFactory"
+  },
+  "0x9f62bd67": {
+    "inputs": [],
+    "name": "getTVLComponents"
+  },
+  "0xa00251c6": {
+    "inputs": [],
+    "name": "calcTotalValue"
+  },
+  "0xa0c1f15e": {
+    "inputs": [],
+    "name": "aToken"
+  },
+  "0xa1dc9031": {
+    "inputs": [],
+    "name": "getTokenBalances"
+  },
+  "0xa262904b": {
+    "inputs": [],
+    "name": "get_registry"
+  },
+  "0xa311c7c2": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "collateralisationRatio"
+  },
+  "0xa4063dbc": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "pools"
+  },
+  "0xa40bee50": {
+    "inputs": [],
+    "name": "assetInfo"
+  },
+  "0xa5fdc5de": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "collateral"
+  },
+  "0xa622ee7c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "vaults"
+  },
+  "0xa6cb8f7d": {
+    "inputs": [],
+    "name": "glbDebtVal"
+  },
+  "0xa77576ef": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_underlying_coins"
+  },
+  "0xa85c38ef": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "orders"
+  },
+  "0xa85ebc5c": {
+    "inputs": [],
+    "name": "usableCollateralBalance"
+  },
+  "0xa88fd94a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getBatchCategory"
+  },
+  "0xa8bc6f7c": {
+    "inputs": [],
+    "name": "totalTVL"
+  },
+  "0xa8c62e76": {
+    "inputs": [],
+    "name": "strategy"
+  },
+  "0xa8ee49fe": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "modules"
+  },
+  "0xa9eaa737": {
+    "inputs": [],
+    "name": "getPortfolios"
+  },
+  "0xaa082c52": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalGHST"
+  },
+  "0xaa25f801": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "foreignTokenAtIndex"
+  },
+  "0xaa388af6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "supportsAsset"
+  },
+  "0xaa6ca808": {
+    "inputs": [],
+    "name": "getTokens"
+  },
+  "0xab9aadfe": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getETHPx"
+  },
+  "0xabb1dc44": {
+    "inputs": [],
+    "name": "getTokenInfo"
+  },
+  "0xac09e713": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "farmInfos"
+  },
+  "0xac4afa38": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "pools"
+  },
+  "0xac92020d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "stakeableTokens"
+  },
+  "0xacc1fddc": {
+    "inputs": [],
+    "name": "stakedWant"
+  },
+  "0xacea21d0": {
+    "inputs": [],
+    "name": "currentPriceDAI"
+  },
+  "0xad4258bd": {
+    "inputs": [],
+    "name": "getFundKncBalanceTwei"
+  },
+  "0xad7a672f": {
+    "inputs": [],
+    "name": "totalBalance"
+  },
+  "0xadf8e963": {
+    "inputs": [],
+    "name": "escrows_length"
+  },
+  "0xae34325c": {
+    "inputs": [],
+    "name": "getInstanceCount"
+  },
+  "0xae6cde0d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenIdToMarionetteId"
+  },
+  "0xae9d70b0": {
+    "inputs": [],
+    "name": "supplyRatePerBlock"
+  },
+  "0xaee9c872": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "totalBalances"
+  },
+  "0xaffed0e0": {
+    "inputs": [],
+    "name": "nonce"
+  },
+  "0xb0772d0b": {
+    "inputs": [],
+    "name": "getAllMarkets"
+  },
+  "0xb07c462c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      },
+      {
+        "name": "param3",
+        "type": "address"
+      }
+    ],
+    "name": "getTotalTokens"
+  },
+  "0xb16a19de": {
+    "inputs": [],
+    "name": "UNDERLYING_ASSET_ADDRESS"
+  },
+  "0xb187bd26": {
+    "inputs": [],
+    "name": "isPaused"
+  },
+  "0xb1a0e7ed": {
+    "inputs": [],
+    "name": "getNoOfErc20s"
+  },
+  "0xb2016bd4": {
+    "inputs": [],
+    "name": "collateralToken"
+  },
+  "0xb3596f07": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getAssetPrice"
+  },
+  "0xb40494e5": {
+    "inputs": [],
+    "name": "getTotalUnderlying"
+  },
+  "0xb40c750d": {
+    "inputs": [],
+    "name": "getAllLendables"
+  },
+  "0xb410a034": {
+    "inputs": [],
+    "name": "issuanceRatio"
+  },
+  "0xb45a3c0e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "locked"
+  },
+  "0xb49a60bb": {
+    "inputs": [],
+    "name": "getStrategies"
+  },
+  "0xb67e1319": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLOVProductQueuedDeposits"
+  },
+  "0xb68ef559": {
+    "inputs": [],
+    "name": "getTotalDeposited"
+  },
+  "0xb69ef8a8": {
+    "inputs": [],
+    "name": "balance"
+  },
+  "0xb6f732ae": {
+    "inputs": [],
+    "name": "ammWrapperAddr"
+  },
+  "0xb71f2e72": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPaginatedInstances"
+  },
+  "0xb98cca37": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getVaults"
+  },
+  "0xb9a09fd5": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "gauges"
+  },
+  "0xbb34534c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      }
+    ],
+    "name": "addressOf"
+  },
+  "0xbb7b8b80": {
+    "inputs": [],
+    "name": "get_virtual_price"
+  },
+  "0xbb941cff": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "lockedToken"
+  },
+  "0xbd244af4": {
+    "inputs": [],
+    "name": "getAllPoolInUSD"
+  },
+  "0xbd30558e": {
+    "inputs": [],
+    "name": "APR"
+  },
+  "0xbd6d894d": {
+    "inputs": [],
+    "name": "exchangeRateCurrent"
+  },
+  "0xbd85b039": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "totalSupply"
+  },
+  "0xbdf475c3": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_pool_from_lp_token"
+  },
+  "0xbecbcc6a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "uint24"
+      }
+    ],
+    "name": "pool"
+  },
+  "0xbee431d0": {
+    "inputs": [],
+    "name": "getFutureAddress"
+  },
+  "0xbf6c5e9b": {
+    "inputs": [],
+    "name": "getProductNames"
+  },
+  "0xc00b3f39": {
+    "inputs": [],
+    "name": "totalNodeValue"
+  },
+  "0xc01e1bd6": {
+    "inputs": [],
+    "name": "l1Token"
+  },
+  "0xc063e08b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getFloatingBalance"
+  },
+  "0xc0fd22b7": {
+    "inputs": [],
+    "name": "getSupportedAssetsLength"
+  },
+  "0xc14cba3e": {
+    "inputs": [],
+    "name": "LPtoken"
+  },
+  "0xc15a4e69": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "slotTotalValue"
+  },
+  "0xc187ac47": {
+    "inputs": [],
+    "name": "getLlamaPayContractCount"
+  },
+  "0xc19d93fb": {
+    "inputs": [],
+    "name": "state"
+  },
+  "0xc1a0ff4c": {
+    "inputs": [],
+    "name": "getUnderlyingAssetAmounts"
+  },
+  "0xc21a43e4": {
+    "inputs": [],
+    "name": "totalPledge"
+  },
+  "0xc2412676": {
+    "inputs": [],
+    "name": "Token"
+  },
+  "0xc2fb9aac": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      }
+    ],
+    "name": "underlyingTokenPair"
+  },
+  "0xc3b28864": {
+    "inputs": [],
+    "name": "getAllStrategies"
+  },
+  "0xc3dfb88e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "AddMarket"
+  },
+  "0xc3f4d79f": {
+    "inputs": [],
+    "name": "totalSYNCLocked"
+  },
+  "0xc3f909d4": {
+    "inputs": [],
+    "name": "getConfig"
+  },
+  "0xc41e575f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getBToken"
+  },
+  "0xc45a0155": {
+    "inputs": [],
+    "name": "factory"
+  },
+  "0xc4a7761e": {
+    "inputs": [],
+    "name": "getTotalAmounts"
+  },
+  "0xc4aa2617": {
+    "inputs": [],
+    "name": "hecoPool"
+  },
+  "0xc55dae63": {
+    "inputs": [],
+    "name": "baseToken"
+  },
+  "0xc59d4847": {
+    "inputs": [],
+    "name": "getStats"
+  },
+  "0xc5b7074a": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "get_virtual_price_from_lp_token"
+  },
+  "0xc5c51dca": {
+    "inputs": [],
+    "name": "pools"
+  },
+  "0xc5d664c6": {
+    "inputs": [],
+    "name": "UNDERLYING"
+  },
+  "0xc644fe94": {
+    "inputs": [],
+    "name": "getIBT"
+  },
+  "0xc6610657": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "coins"
+  },
+  "0xc6700f01": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "string"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "uint8"
+      }
+    ],
+    "name": "getElements"
+  },
+  "0xc6ec27bf": {
+    "inputs": [],
+    "name": "getUnderlyingOfIBTAddress"
+  },
+  "0xc70920bc": {
+    "inputs": [],
+    "name": "totalUnderlying"
+  },
+  "0xc816841b": {
+    "inputs": [],
+    "name": "uniswapPair"
+  },
+  "0xc89039c5": {
+    "inputs": [],
+    "name": "depositToken"
+  },
+  "0xc901761d": {
+    "inputs": [],
+    "name": "totalValueDeployed"
+  },
+  "0xc9a396e9": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getReserve"
+  },
+  "0xc9c65396": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "createPair"
+  },
+  "0xca15c873": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getRoleMemberCount"
+  },
+  "0xca5c7b91": {
+    "inputs": [],
+    "name": "lockedSupply"
+  },
+  "0xcb69e7b8": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "totalValueLockedOf"
+  },
+  "0xcbe36196": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getUnderlyingAssets"
+  },
+  "0xcc77828d": {
+    "inputs": [],
+    "name": "getCurrentTokens"
+  },
+  "0xcc7a262e": {
+    "inputs": [],
+    "name": "stakedToken"
+  },
+  "0xcd171915": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPositionManagers"
+  },
+  "0xcd3293de": {
+    "inputs": [],
+    "name": "reserve"
+  },
+  "0xce385a92": {
+    "inputs": [],
+    "name": "getVaultList"
+  },
+  "0xd005ce5c": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getGardenDetails"
+  },
+  "0xd09ef241": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getOrder"
+  },
+  "0xd0e7351d": {
+    "inputs": [],
+    "name": "gsupply"
+  },
+  "0xd1946dbc": {
+    "inputs": [],
+    "name": "getReservesList"
+  },
+  "0xd1c924a5": {
+    "inputs": [],
+    "name": "getMiningContractInfo"
+  },
+  "0xd21220a7": {
+    "inputs": [],
+    "name": "token1"
+  },
+  "0xd28682ea": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getPoolBalance"
+  },
+  "0xd37c4d8b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "bytes32"
+      }
+    ],
+    "name": "debtBalanceOf"
+  },
+  "0xd3866ae6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getPairWithID"
+  },
+  "0xd3c7c2c7": {
+    "inputs": [],
+    "name": "getSupportedTokens"
+  },
+  "0xd41dcbea": {
+    "inputs": [],
+    "name": "getPoolList"
+  },
+  "0xd4c3eea0": {
+    "inputs": [],
+    "name": "totalValue"
+  },
+  "0xd5108057": {
+    "inputs": [],
+    "name": "totalAllocatedNav"
+  },
+  "0xd574ea3d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "strategies"
+  },
+  "0xd58778d6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenIds"
+  },
+  "0xd65bfb54": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getShieldTokenAddress"
+  },
+  "0xd6eb5910": {
+    "inputs": [],
+    "name": "getTotalCollateral"
+  },
+  "0xd6efd7c3": {
+    "inputs": [],
+    "name": "liquidityPools"
+  },
+  "0xd88953b4": {
+    "inputs": [],
+    "name": "virtualUsdtAccumulatedBalance"
+  },
+  "0xd88ff1f4": {
+    "inputs": [],
+    "name": "getAllPools"
+  },
+  "0xd89dd46d": {
+    "inputs": [],
+    "name": "getActiveOrdersLength"
+  },
+  "0xd8ceb6c6": {
+    "inputs": [],
+    "name": "usableFtmBalance"
+  },
+  "0xd8dfeb45": {
+    "inputs": [],
+    "name": "collateral"
+  },
+  "0xd9f7e9a7": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "xBTRFLYValue"
+  },
+  "0xda480fb7": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "sharesTotal"
+  },
+  "0xdaec2a1a": {
+    "inputs": [],
+    "name": "getGardens"
+  },
+  "0xdb77e2b2": {
+    "inputs": [],
+    "name": "tokenUnderlying"
+  },
+  "0xdc24fc07": {
+    "inputs": [],
+    "name": "getBufferBalance"
+  },
+  "0xdd5d30de": {
+    "inputs": [],
+    "name": "see_s1ftm_circ"
+  },
+  "0xddb79f02": {
+    "inputs": [],
+    "name": "getAllFragmentedTokens"
+  },
+  "0xde6843c3": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "mkts"
+  },
+  "0xde82cd34": {
+    "inputs": [],
+    "name": "getVirtualSupply"
+  },
+  "0xe087be19": {
+    "inputs": [],
+    "name": "getGlobalPositionData"
+  },
+  "0xe0886f90": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "at"
+  },
+  "0xe0ca79e4": {
+    "inputs": [],
+    "name": "totalTvl"
+  },
+  "0xe11a0b83": {
+    "inputs": [],
+    "name": "calcUnrealisedDebt"
+  },
+  "0xe17d883f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getIBPrice"
+  },
+  "0xe1fb73d9": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "allCalls"
+  },
+  "0xe2e4c60c": {
+    "inputs": [],
+    "name": "getRawFundBalances"
+  },
+  "0xe30c3978": {
+    "inputs": [],
+    "name": "pendingOwner"
+  },
+  "0xe492cdce": {
+    "inputs": [],
+    "name": "liquidAssets"
+  },
+  "0xe49e803e": {
+    "inputs": [],
+    "name": "getInactiveTokens"
+  },
+  "0xe5406dbf": {
+    "inputs": [],
+    "name": "getSupportedAssets"
+  },
+  "0xe5cfd849": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "R"
+  },
+  "0xe68b922e": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "tokenParameters"
+  },
+  "0xe6a43905": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "getPair"
+  },
+  "0xe6c7f4f8": {
+    "inputs": [],
+    "name": "see_s1tomb_circ"
+  },
+  "0xe73efc9b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "activeMarkets"
+  },
+  "0xe7a03679": {
+    "inputs": [],
+    "name": "wantAddress"
+  },
+  "0xe86098f5": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "erc20List"
+  },
+  "0xe8e57118": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "xToken"
+  },
+  "0xeafe7a74": {
+    "inputs": [],
+    "name": "assetCount"
+  },
+  "0xeb488871": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address[]"
+      }
+    ],
+    "name": "getPositionsMetadata"
+  },
+  "0xeb765955": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "arraySynths"
+  },
+  "0xebfd23e9": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "tokenInfoDetail"
+  },
+  "0xec16aef4": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "oneTokenAtIndex"
+  },
+  "0xec18154e": {
+    "inputs": [],
+    "name": "totalValueLocked"
+  },
+  "0xec1ebd7a": {
+    "inputs": [],
+    "name": "getRatio"
+  },
+  "0xec56c716": {
+    "inputs": [],
+    "name": "instanceCount"
+  },
+  "0xece28066": {
+    "inputs": [],
+    "name": "getFundHoldings"
+  },
+  "0xed320157": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getPoolPriceInfo"
+  },
+  "0xed80c850": {
+    "inputs": [],
+    "name": "totalLoansOutstanding"
+  },
+  "0xedaf2d2e": {
+    "inputs": [],
+    "name": "TVL"
+  },
+  "0xeebc359a": {
+    "inputs": [],
+    "name": "getBalanceInCollateralToken"
+  },
+  "0xef8bd305": {
+    "inputs": [],
+    "name": "APY"
+  },
+  "0xefc20472": {
+    "inputs": [],
+    "name": "illiquidValue"
+  },
+  "0xefde4e64": {
+    "inputs": [],
+    "name": "allPoolsLength"
+  },
+  "0xf0056a7d": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "pooledTokens"
+  },
+  "0xf018ae69": {
+    "inputs": [],
+    "name": "getIBTAddress"
+  },
+  "0xf04b5fa0": {
+    "inputs": [],
+    "name": "globalInfo"
+  },
+  "0xf1068454": {
+    "inputs": [],
+    "name": "pid"
+  },
+  "0xf1437c16": {
+    "inputs": [],
+    "name": "getPoolTotalValue"
+  },
+  "0xf1b8a9b7": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getNormalizedWeight"
+  },
+  "0xf2fa12d2": {
+    "inputs": [],
+    "name": "liquidValue"
+  },
+  "0xf2fde38b": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership"
+  },
+  "0xf3052d26": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "getCategory"
+  },
+  "0xf3dc459f": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAmounts"
+  },
+  "0xf4325d67": {
+    "inputs": [],
+    "name": "reserveToken"
+  },
+  "0xf4871966": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getCapitalCompoundRatio"
+  },
+  "0xf5130250": {
+    "inputs": [],
+    "name": "balanceOfGtoken"
+  },
+  "0xf525cb68": {
+    "inputs": [],
+    "name": "poolCount"
+  },
+  "0xf55fd61c": {
+    "inputs": [],
+    "name": "totalBEP20"
+  },
+  "0xf5679189": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "stakedTotal"
+  },
+  "0xf5be3193": {
+    "inputs": [],
+    "name": "totalIssued"
+  },
+  "0xf62912c6": {
+    "inputs": [],
+    "name": "sumVaultUnderlyingAmounts"
+  },
+  "0xf655dbc1": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint128"
+      }
+    ],
+    "name": "poolMetas"
+  },
+  "0xf74ed6de": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "assetsInPricingModule"
+  },
+  "0xf7729d43": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      },
+      {
+        "name": "param3",
+        "type": "uint24"
+      },
+      {
+        "name": "param4",
+        "type": "uint256"
+      },
+      {
+        "name": "param5",
+        "type": "uint160"
+      }
+    ],
+    "name": "quoteExactInputSingle"
+  },
+  "0xf77c4791": {
+    "inputs": [],
+    "name": "controller"
+  },
+  "0xf7888aec": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      },
+      {
+        "name": "param2",
+        "type": "address"
+      }
+    ],
+    "name": "balanceOf"
+  },
+  "0xf8f9da28": {
+    "inputs": [],
+    "name": "borrowRatePerBlock"
+  },
+  "0xf91d3ae6": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "uint256"
+      }
+    ],
+    "name": "_vaults"
+  },
+  "0xf94d4668": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getPoolTokens"
+  },
+  "0xf952829e": {
+    "inputs": [],
+    "name": "getAssetVaults"
+  },
+  "0xf9557ccb": {
+    "inputs": [],
+    "name": "totalAsset"
+  },
+  "0xf9559774": {
+    "inputs": [],
+    "name": "getAllFarms"
+  },
+  "0xfc0c546a": {
+    "inputs": [],
+    "name": "token"
+  },
+  "0xfc57d4df": {
+    "inputs": [
+      {
+        "name": "param1",
+        "type": "address"
+      }
+    ],
+    "name": "getUnderlyingPrice"
+  },
+  "0xfc7b9c18": {
+    "inputs": [],
+    "name": "totalDebt"
+  },
+  "0xfd9c652b": {
+    "inputs": [],
+    "name": "syncBalance"
+  },
+  "0xfdd89a34": {
+    "inputs": [],
+    "name": "poolTokensInfo"
+  },
+  "0xfde924f7": {
+    "inputs": [],
+    "name": "isPublicSwap"
+  },
+  "0xfeaf968c": {
+    "inputs": [],
+    "name": "latestRoundData"
+  },
+  "0xff3f60e7": {
+    "inputs": [],
+    "name": "borrows"
+  },
+  "0xff50abdc": {
+    "inputs": [],
+    "name": "totalDeposited"
+  }
+}

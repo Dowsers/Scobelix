@@ -17,6 +17,7 @@
 
 import numbers
 import logging
+from functools import reduce
 
 from panoramix.core.variants import variants
 from panoramix.matcher import Any, match
@@ -526,8 +527,16 @@ def _ge_zero(exp):
     if opcode(exp) in ["cd", "storage", "msize"]:
         return True
 
-    if opcode(exp) in ["add", "or"]:
+    if opcode(exp) == "add":
         return add_ge_zero(exp)
+
+    if opcode(exp) == "or":
+        if all(type(e) == int for e in exp[1:]):
+            return reduce(lambda a, b: a | b, exp[1:]) >= 0
+        for e in exp[1:]:
+            if safe_ge_zero(e) is not True:
+                return None
+        return True
 
     if opcode(exp) in ("var", "ext_call.return_data"):
         return True

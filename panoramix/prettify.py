@@ -74,6 +74,14 @@ PANIC_CODES = {
 
 prev_trace = None
 
+def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=False):
+    if exp is None:
+        return "<?>"
+
+def safe_pret(x):
+    v = pret(x)
+    return v if isinstance(v,str) else "<?>"
+
 
 def explain(title, trace):
     global prev_trace
@@ -128,7 +136,11 @@ def format_exp(exp):
         if exp > 10**6 and exp % 10**6 != 0:
             return hex(exp)
         else:
-            return str(exp)
+            try:
+                return str(exp)
+            except Exception:
+                return "<?>"
+            
     elif type(exp) != list:
         return str(exp)
     else:
@@ -212,6 +224,12 @@ def pretty_repr(exp, indent=0):
 # print(pretty_repr(('data', ('mem', ('range', ('add', 32, 'QQ', ('mask_shl', 251, 5, 0, ('add', 31, ('ext_call.return_data', 128, 32)))), 32)), 'yy', ('data', ('mem', ('range', ('add', 32, 'QQ'), ('ext_call.return_data', 128, 32))), ('mem', ('range', ('add', 96, 'QQ', ('mask_shl', 251, 5, 0, ('add', 31, ('ext_call.return_data', 128, 32))), ('ext_call.return_data', 128, 32)), 0))))))
 # exit()
 
+def emit_fallback(solc_version):
+    if solc_version < (0, 6, 0):
+        return "function() external payable { revert(); }"
+    else:
+        return "fallback() external payable { revert(); }"
+    
 
 def pformat_trace(trace):
     return "\n".join(pprint_logic(trace)) + "\n\n"
@@ -731,6 +749,11 @@ def pretty_line(r, add_color=True):
     #            assert op == 'revert'
     #            yield "{} with {}".format(op, ret_val) # adding 'with' to make it more readable
 
+    elif m := match(r, ("tstore", ":idx", ":val")):
+        idx = prettify(m.idx, add_color=add_color, parentheses=False)
+        val = prettify(m.val, add_color=add_color, parentheses=False)
+        yield f"tstorage[{idx}] = {val}"
+
     elif m := match(r, ("store", ":size", ":off", ":idx", ":val")):
         size, off, idx, val = m.size, m.off, m.idx, m.val
         stor_addr = prettify(("stor", size, off, idx), add_color=add_color)
@@ -971,13 +994,16 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         return f"block.hash({pret(m.number)})"
 
     if m := match(exp, ("extcodehash", ":addr")):
-        return f"ext_code.hash({pret(m.addr)})"
+        return f"{pret(m.addr)}.codehash"
 
     if m := match(exp, ("extcodesize", ":addr")):
-        return f"ext_code.size({pret(m.addr)})"
+        return f"{pret(m.addr)}.code.length"
 
     if m := match(exp, ("extcodecopy", ":addr", ":loc")):
         return f"ext_code.copy({pret(m.addr)}, {pret(m.loc)})"
+
+    if m := match(exp, ("tload", ":idx")):
+        return f"tstorage[{pret(m.idx)}]"
 
     if opcode(exp) == "max":
         _, *terms = exp
@@ -994,6 +1020,15 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
 
     if exp == "difficulty":
         return "block.difficulty"
+
+    if exp == "prevrandao":
+        return "block.prevrandao"
+
+    if m := match(exp, ("blobhash", ":idx")):
+        return f"block.blobhash({pret(m.idx)})"
+
+    if exp == "blobbasefee":
+        return "block.blobbasefee"
 
     if exp == "basefee":
         return "block.basefee"
@@ -1262,7 +1297,7 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
 
             if type_name is not None:
                 return (
-                    col(type_name + "(", COLOR_GRAY) + pret(val) + col(")", COLOR_GRAY)
+                    (col(type_name + "(", COLOR_GRAY) + (pret(val) or str(val)) + col(")", COLOR_GRAY))
                 )
 
     if m := match(exp, ("bool", ":val")):
@@ -1345,9 +1380,10 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
             return f"({res})"
         else:
             return res
-
+    # we change that because it produce => !a ==b who is interpret as (!a) == b and we want => !(a == b)
     if opcode(exp) == "not":
-        return COLOR_BOLD + "!" + ENDC + prettify(exp[1], add_color=add_color)
+        inner = prettify(exp[1], add_color=add_color, parentheses=True)
+        return f"!({inner})"
 
     if opcode(exp) == "add":
         return pretty_adds(exp)
@@ -1406,24 +1442,29 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         else:
             return form.format(op_form.join(pret(e) for e in exp[1:]))
 
+    # We need to keep a good boolean expression
     if m := match(exp, ("iszero", ":val")):
         val = m.val
 
-        if m := match(val, ("gt", ":left", ":right")):
-            return pret(m.left) + " <= " + pret(m.right)
+        def s(x):
+            r = pret(x)
+            return r if r is not None else str(x)
 
-        if m := match(val, ("lt", ":left", ":right")):
-            return pret(m.left) + " >= " + pret(m.right)
+        if m2 := match(val, ("gt", ":left", ":right")):
+            return f"({s(m2.left)} <= {s(m2.right)})"
 
-        if m := match(val, ("eq", ":left", ":right")):
-            if type(m.left) in (str, int):
-                return pret(m.right) + " != " + pret(m.left)
-            else:
-                return pret(m.left) + " != " + pret(m.right)
+        if m2 := match(val, ("lt", ":left", ":right")):
+            return f"({s(m2.left)} >= {s(m2.right)})"
 
-        return "not " + pret(val)
+        if m2 := match(val, ("eq", ":left", ":right")):
+            return f"({s(m2.left)} != {s(m2.right)})"
+
+        return f"({s(val)} == 0)"
 
     return str(exp)
+
+
+
 
 
 def pretty_gas(gas, value, add_color):

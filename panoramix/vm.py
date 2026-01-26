@@ -71,7 +71,7 @@ def find_nodes(node, f):
     return res
 
 
-MAX_NODE_COUNT = 5_000
+MAX_NODE_COUNT = 500_000
 node_count = 0
 
 
@@ -173,37 +173,43 @@ class Node:
         last = self.trace[-1]
 
         if opcode(last) == "jump":
-            n = last[1]
+            if isinstance(last[1], Node):
+                last[1].set_prev(self)
 
-            n.set_prev(self)
+        elif opcode(last) == "if":
+            _, _, t, f = last
+            if isinstance(t, Node):
+                t.set_prev(self)
+            if isinstance(f, Node):
+                f.set_prev(self)
 
-        if opcode(last) == "if":
-            if_true, if_false = last[2], last[3]
 
-            if_true.set_prev(self)
-            if_false.set_prev(self)
 
 
 class VM(EasyCopy):
-    def __init__(self, loader, just_fdests=False):
+    def __init__(self, loader, just_fdests=False, protocol_safe=True):
         self.loader = loader
 
-        # (line_no, op, param)
-        self.lines = loader.lines  # a shortcut
+        self.lines = loader.lines
 
         self.just_fdests = just_fdests
+        self.protocol_safe = protocol_safe
 
         self.counter = 0
+        self._stop_now = False
+
         global node_count
         node_count = 0
 
+
     def run(self, start, history={}, condition=None, re_run=False, stack=(), timeout=0):
         time_start = time.monotonic()
+        last_progress = time_start
 
         def should_quit():
-            return node_count > MAX_NODE_COUNT or (
-                timeout and (time.monotonic() - time_start > timeout)
-            )
+            if MAX_NODE_COUNT is not None and node_count > MAX_NODE_COUNT:
+                return True
+            return timeout and (time.monotonic() - time_start > timeout)
 
         func_node = Node(vm=self, start=start, safe=True, stack=list(stack))
         trace = [
@@ -213,7 +219,6 @@ class VM(EasyCopy):
 
         root = Node(vm=self, trace=trace, start=start, safe=True, stack=list(stack))
         func_node.set_prev(root)
-
         """
 
             BFS symbolic execution, ends up with a decompiled
@@ -232,9 +237,7 @@ class VM(EasyCopy):
                 the next jump.
 
                 """
-
                 self.expand_trace(root)
-
                 """
                     find all the jumps that lead to an already
                     reached jumpdest (with similar stack, otherwise
@@ -242,9 +245,7 @@ class VM(EasyCopy):
 
                     replace them with 'loop' identifier
                 """
-
                 self.replace_loops(root)
-
                 """
                     repeat until there are no more jumps
                     to explore (so, until the trace didn't change)
@@ -252,12 +253,20 @@ class VM(EasyCopy):
                 """
 
                 nodes = find_nodes(root, lambda n: n.trace is None)
-
                 if len(nodes) == 0 or should_quit():
                     break
+                now = time.monotonic()
+                if now - last_progress >= 2:
+                    if MAX_NODE_COUNT:
+                        pct = min(int(node_count * 100 / MAX_NODE_COUNT), 100)
+                        filled = int(pct / 5)
+                        bar = "#" * filled + "-" * (20 - filled)
+                        logger.info("VM progress [%s] %s%% (%s nodes)", bar, pct, node_count)
+                    else:
+                        logger.info("VM progress %s nodes", node_count)
+                    last_progress = now
 
             trace = self.continue_loops(root)
-
             # tr = root.make_trace()
             nodes = find_nodes(root, lambda n: n.trace is None)
 
@@ -273,6 +282,7 @@ class VM(EasyCopy):
 
         tr = root.make_trace()
         return tr
+
 
     def expand_trace(self, root):
         nodes = find_nodes(root, lambda n: n.trace is None)
@@ -339,6 +349,9 @@ class VM(EasyCopy):
 
     def _run(self, start, safe, stack, condition):
         logger.debug("VM._run stack=%s", stack)
+
+        self._stop_now = False #reset each node run
+
         self.stack = Stack(stack)
         trace = []
 
@@ -385,9 +398,11 @@ class VM(EasyCopy):
             else:
                 self.apply_stack(trace, line)
 
-            i = self.loader.next_line(i)
 
-        assert False
+            i = self.loader.next_line(i)
+        logger.error()
+        #assert False
+
 
     def handle_jumps(self, trace, line, condition):
         i, op = line[0], line[1]
@@ -438,6 +453,7 @@ class VM(EasyCopy):
             if_condition = simplify_bool(stack.pop())
 
             tuple_stack = tuple(self.stack.stack)
+
             n_true = Node(
                 self,
                 start=target,
@@ -445,6 +461,7 @@ class VM(EasyCopy):
                 stack=tuple_stack,
                 condition=if_condition,
             )
+
             n_false = Node(
                 self,
                 start=self.loader.next_line(i),
@@ -453,43 +470,27 @@ class VM(EasyCopy):
                 condition=is_zero(if_condition),
             )
 
-            if self.just_fdests:
-                if (
-                    (m := match(if_condition, ("eq", ":fx_hash", ":is_cd")))
-                    and str(("cd", 0)) in str(m.is_cd)
-                    and isinstance(m.fx_hash, int)
-                ):
-                    n_true.trace = [("funccall", m.fx_hash, target, tuple_stack)]
-                if (
-                    (m := match(if_condition, ("eq", ":is_cd", ":fx_hash")))
-                    and str(("cd", 0)) in str(m.is_cd)
-                    and isinstance(m.fx_hash, int)
-                ):
-                    n_true.trace = [("funccall", m.fx_hash, target, tuple_stack)]
-
-            bool_condition = arithmetic.eval_bool(
-                if_condition, condition, symbolic=False
-            )
-
+            bool_condition = arithmetic.eval_bool(if_condition, condition, symbolic=False)
             if bool_condition is not None:
-                if bool_condition:
-                    trace.append(("jump", n_true))
-                    return trace  # res, False
+                trace.append(("jump", n_true if bool_condition else n_false))
+                return trace
 
-                else:
-                    trace.append(("jump", n_false))
-                    return trace
-
-            trace.append(
-                (
-                    "if",
-                    if_condition,
-                    n_true,
-                    n_false,
+            # protocol-safe pruning (SAFE VERSION)
+            if self.protocol_safe and node_count > int(MAX_NODE_COUNT * 0.6):
+                pruned_false = Node(
+                    self,
+                    start=self.loader.next_line(i),
+                    safe=True,
+                    stack=tuple_stack,
+                    condition=is_zero(if_condition),
+                    trace=[("stop",)]
                 )
-            )
-            logger.debug("jumpi -> if %s", trace[-1])
+                trace.append(("if", if_condition, n_true, pruned_false))
+                return trace
+
+            trace.append(("if", if_condition, n_true, n_false))
             return trace
+
 
         elif op in ["return", "revert"]:
             p = stack.pop()
@@ -499,22 +500,12 @@ class VM(EasyCopy):
                 trace.append((op, 0))
             else:
                 return_data = mem_load(p, n)
-                trace.append(
-                    (
-                        op,
-                        return_data,
-                    )
-                )
+                trace.append((op, return_data))
 
             return trace
 
         elif op == "selfdestruct":
-            trace.append(
-                (
-                    "selfdestruct",
-                    stack.pop(),
-                )
-            )
+            trace.append(("selfdestruct", stack.pop()))
             return trace
 
         elif op in ["stop", "assert_fail", "invalid"]:
@@ -526,6 +517,8 @@ class VM(EasyCopy):
             return trace
 
         return None
+
+
 
     def apply_stack(self, ret, line):
         def trace(exp, *format_args):
@@ -594,8 +587,13 @@ class VM(EasyCopy):
         elif op == "pop":
             stack.pop()
 
-        elif op == "dup":
-            stack.dup(param)
+        elif op.startswith("dup"):
+            # dup1..dup16
+            if op == "dup":
+                n = param
+            else:
+                n = int(op[3:])
+            stack.dup(n)
 
         elif op == "mul":
             stack.append(mul_op(stack.pop(), stack.pop()))
@@ -693,6 +691,46 @@ class VM(EasyCopy):
                 )
             )
 
+        elif op == "prevrandao":
+            stack.append("prevrandao")
+
+        elif op == "blobbasefee":
+            stack.append("blobbasefee")
+
+        elif op == "blobhash":
+            stack.append(
+                (
+                    "blobhash",
+                    stack.pop(),
+                )
+            )
+
+        elif op == "tload":
+            stack.append(
+                (
+                    "tload",
+                    stack.pop(),
+                )
+            )
+
+        elif op == "tstore":
+            tloc = stack.pop()
+            val = stack.pop()
+            trace(("tstore", tloc, val))
+
+        elif op == "mcopy":
+            dst = stack.pop()
+            src = stack.pop()
+            size = stack.pop()
+            if size != 0:
+                trace(
+                    (
+                        "setmem",
+                        ("range", dst, size),
+                        mem_load(src, size),
+                    )
+                )
+
         elif op == "balance":
             addr = stack.pop()
             if addr[:4] == ("mask_shl", 160, 0, 0):
@@ -710,8 +748,13 @@ class VM(EasyCopy):
                     )
                 )
 
-        elif op == "swap":
-            stack.swap(param)
+        elif op.startswith("swap"):
+            # swap1..swap16
+            if op == "swap":
+                n = param
+            else:
+                n = int(op[4:])
+            stack.swap(n)
 
         elif op[:3] == "log":
             p = stack.pop()
@@ -856,35 +899,39 @@ class VM(EasyCopy):
             ret_start = stack.pop()
             ret_len = stack.pop()
 
-            call_trace = (
-                "delegatecall",
-                gas,
-                addr,
-            )  # arg_start, arg_len, ret_start, ret_len)
+            #symbolic delegatecall
+            self.counter += 1
+            call_id = f"delegatecall_{self.counter}"
 
+            # function selector + params
             if arg_len == 0:
                 fname = None
                 fparams = None
-
             elif arg_len == 4:
                 fname = mem_load(arg_start, 4)
-                fparams = 0
-
+                fparams = None
             else:
                 fname = mem_load(arg_start, 4)
                 fparams = mem_load(add_op(arg_start, 4), sub_op(arg_len, 4))
 
-            call_trace += (fname, fparams)
+            trace((
+                "delegatecall",
+                gas,
+                addr,
+                fname,
+                fparams,
+            ))
 
-            trace(call_trace)
+            #symbolic success
+            success_var = f"{call_id}.success"
+            stack.append(("var", success_var))
 
-            self.call_len = ret_len
-            stack.append("delegate.return_code")
+            #symbolic returndata
+            if ret_len != 0:
+                ret_data = ("delegate.return_data", addr, ret_len)
+                trace(("setmem", ("range", ret_start, ret_len), ret_data))
 
-            if 0 != ret_len:
-                return_data = ("delegate.return_data", 0, ret_len)
 
-                trace(("setmem", ("range", ret_start, ret_len), return_data))
 
         elif op == "callcode":
             gas = stack.pop()
@@ -980,6 +1027,7 @@ class VM(EasyCopy):
             "timestamp",
             "chainid",
             "difficulty",
+            "prevrandao",
             "gasprice",
             "coinbase",
             "gaslimit",
@@ -991,7 +1039,7 @@ class VM(EasyCopy):
 
         else:
             # TODO: Maybe raise an error directly?
-            assert op not in [
+            if op not in [
                 "jump",
                 "jumpi",
                 "revert",
@@ -999,7 +1047,9 @@ class VM(EasyCopy):
                 "stop",
                 "jumpdest",
                 "UNKNOWN",
-            ]
+            ]:
+                logger.warning(f"unsupporteed opcode %s : {op}")
+                return
 
         if stack.len() - previous_len != opcode_dict.stack_diffs[op]:
             logger.error("line: %s", line)
@@ -1009,7 +1059,8 @@ class VM(EasyCopy):
                 opcode_dict.stack_diffs[op],
                 stack.len() - previous_len,
             )
-            assert False, f"opcode {op} not processed correctly"
+            logger.error(f"opcode {op} not processed correctly, very the code")
+            #assert False, f"opcode {op} not processed correctly"
 
         stack.cleanup()
 

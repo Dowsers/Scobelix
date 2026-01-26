@@ -132,8 +132,18 @@ logger = logging.getLogger(__name__)
 """
 
 
+LARGE_TRACE_THRESHOLD = 2000
+MAX_SIMPLIFY_PASSES_LARGE = 20
+MAX_MEM_CLEANUP_TRACE_LEN = 2000
+
+
 def simplify_trace(trace, timeout=0):
     time_start = time.monotonic()
+    max_passes = (
+        MAX_SIMPLIFY_PASSES_LARGE
+        if len(trace) > LARGE_TRACE_THRESHOLD
+        else 40
+    )
 
     def should_quit():
         q = timeout and (time.monotonic() - time_start > timeout)
@@ -143,8 +153,16 @@ def simplify_trace(trace, timeout=0):
 
     old_trace = None
     count = 0
-    while trace != old_trace and count < 40 and not should_quit():
+    while trace != old_trace and count < max_passes and not should_quit():
         count += 1
+        if count % 5 == 0:
+            pct = int(count * 100 / max_passes)
+            logger.info(
+                "Simplify progress %s%% (pass %s/%s)",
+                pct,
+                count,
+                max_passes,
+            )
 
         old_trace = trace
 
@@ -398,10 +416,14 @@ def simplify_exp(exp):
         exp, ("mask_shl", ":size", 0, 0, ("mem", ("range", ":mem_loc", ":mem_size")))
     ):
         if divisible_bytes(m.size) and safe_le_op(to_bytes(m.size)[0], m.mem_size):
-            return (
-                "mem",
-                apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, 0),
-            )
+            try:
+                return (
+                    "mem",
+                    apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, 0),
+                )
+            except AssertionError:
+                logger.exception("problem with apply_mask_to_range")
+                return exp
 
     if (
         m := match(
@@ -420,10 +442,14 @@ def simplify_exp(exp):
             and safe_le_op(to_bytes(m.size)[0], m.mem_size)
             and divisible_bytes(m.off)
         ):
-            return (
-                "mem",
-                apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, m.off),
-            )
+            try:
+                return (
+                    "mem",
+                    apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, m.off),
+                )
+            except AssertionError:
+                logger.exception("problem with apply_mask_to_range")
+                return exp
 
     elif opcode(exp) == "data":
         params = exp[1:]
@@ -1503,6 +1529,14 @@ def cleanup_mems(trace):
     if possible
 
     """
+
+    if len(trace) > MAX_MEM_CLEANUP_TRACE_LEN:
+        logger.debug(
+            "cleanup_mems skipped (trace len %s > %s)",
+            len(trace),
+            MAX_MEM_CLEANUP_TRACE_LEN,
+        )
+        return trace
 
     res = []
 

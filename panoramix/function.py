@@ -243,6 +243,16 @@ class Function(EasyCopy):
 
     def serialize(self):
         trace = self.trace
+        def json_safe(obj):
+            if obj is None or isinstance(obj, (str, int, float, bool)):
+                return obj
+            if isinstance(obj, dict):
+                return {str(k): json_safe(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple, set)):
+                return [json_safe(v) for v in obj]
+            if obj.__class__.__name__ == "Node":
+                return str(obj)
+            return str(obj)
 
         res = {
             "hash": self.hash,
@@ -254,8 +264,8 @@ class Function(EasyCopy):
             "const": self.const,
             "payable": self.payable,
             "print": self.print(),
-            "trace": trace,
-            "params": self.inferred_params,
+            "trace": json_safe(trace),
+            "params": json_safe(self.inferred_params),
         }
         try:
             assert json.dumps(res)  # check if serialisation works well

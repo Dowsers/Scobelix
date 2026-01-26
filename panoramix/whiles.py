@@ -110,21 +110,33 @@ def make(trace):
 
     for idx, line in enumerate(trace):
         if m := match(line, ("if", ":cond", ":if_true", ":if_false")):
-            res.append(("if", m.cond, make(m.if_true), make(m.if_false)))
+            res.append((
+                "if",
+                m.cond,
+                make(m.if_true),
+                make(m.if_false),
+            ))
 
+        #potential while
         elif m := match(line, ("label", ":jd", ":vars", ...)):
             jd, vars = m.jd, m.vars
-            try:
-                before, inside, remaining, cond = to_while(trace[idx + 1 :], jd)
-            except Exception:
-                logger.exception("couldn't make loop for line %s, omitting it.", line)
+
+            res_while = to_while(trace[idx + 1:], jd)
+
+            # no goood while -> we keep same label 
+            if res_while is None:
+                res.append(line)
                 continue
 
+            before, inside, remaining, cond = res_while
+
+            #récursion
             inside = make(inside)
             remaining = make(remaining)
 
             for _, v_idx, v_val in vars:
                 before = replace(before, ("var", v_idx), v_val)
+
             before = make(before)
 
             res.extend(before)
@@ -140,6 +152,7 @@ def make(trace):
             res.append(line)
 
     return res
+
 
 
 def get_jds(line):
@@ -160,6 +173,8 @@ def to_while(trace, jd, path=None):
     path = path or []
 
     while True:
+        if not trace:
+            return None #if no good while we skip properly
         line, *trace = trace
 
         if m := match(line, ("if", ":cond", ":if_true", ":if_false")):
@@ -177,7 +192,10 @@ def to_while(trace, jd, path=None):
             jds_true = find_f_list(if_true, get_jds)
             jds_false = find_f_list(if_false, get_jds)
 
-            assert (jd in jds_true) != (jd in jds_false), (jd, jds_true, jds_false)
+            #assert (jd in jds_true) != (jd in jds_false), (jd, jds_true, jds_false)
+
+            if (jd in jds_true) == (jd in jds_false):
+                return None # if it's ambigu or absent -> no while then
 
             def add_path(line):
                 if m := match(line, ("goto", Any, ":svs")):
@@ -198,5 +216,5 @@ def to_while(trace, jd, path=None):
 
         else:
             path.append(line)
-
-    assert False, f"no if after label?{jd}"
+    return None
+    #assert False, f"no if after label?{jd}"
