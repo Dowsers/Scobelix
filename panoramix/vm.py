@@ -475,7 +475,7 @@ class VM(EasyCopy):
                 trace.append(("jump", n_true if bool_condition else n_false))
                 return trace
 
-            # protocol-safe pruning (SAFE VERSION)
+            # protocol-safe pruning
             if self.protocol_safe and node_count > int(MAX_NODE_COUNT * 0.6):
                 pruned_false = Node(
                     self,
