@@ -55,6 +55,23 @@ pipeline {
       }
     }
 
+    stage('Verify Vyper file') {
+      steps {
+        sh '''
+        set -e
+        if [ ! -f link_decompilation.vy ]; then
+          echo "ERROR: link_decompilation.vy n'existe pas"
+          exit 1
+        fi
+        if [ ! -s link_decompilation.vy ]; then
+          echo "ERROR: link_decompilation.vy est vide"
+          exit 1
+        fi
+        echo "OK: link_decompilation.vy existe ($(wc -l < link_decompilation.vy) lignes, $(wc -c < link_decompilation.vy) octets)"
+        '''
+      }
+    }
+
     stage('Vyper syntax check') {
       steps {
         sh '''
