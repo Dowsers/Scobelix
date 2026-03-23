@@ -44,7 +44,7 @@ pipeline {
         fi
 
         panoramix "$BYTECODE" 2>/dev/null \
-          | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' \
+          | sed -r 's/\\x1B\\[[0-9;]*[A-Za-z]//g' \
           > link_decompilation.vy
 
         if [ ! -s link_decompilation.vy ]; then
