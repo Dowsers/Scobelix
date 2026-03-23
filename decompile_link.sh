@@ -25,15 +25,26 @@ panoramix "$BYTECODE" 2>/dev/null \
   | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' \
   > link_decompilation.vy
 
-if [ ! -s link_decompilation.vy ]; then
-  echo "ERR: output vide"
+if [ ! -f link_decompilation.vy ]; then
+  echo "FAIL: link_decompilation.vy est manquant"
   exit 1
 fi
 
-if vyper link_decompilation.vy > /dev/null 2>&1; then
-  echo "OK: link_decompilation.vy est compilable Vyper"
-else
-  echo "WARN: link_decompilation.vy n'est pas strictement compilable Vyper"
+if [ ! -s link_decompilation.vy ]; then
+  echo "FAIL: link_decompilation.vy existe mais est vide"
+  exit 1
 fi
 
-echo "Fini : fichier link_decompilation.vy"
+echo "OK: link_decompilation.vy existe et contient du contenu"
+
+if vyper link_decompilation.vy > /dev/null 2>&1; then
+  echo "OK: link_decompilation.vy est compilable Vyper"
+  exit 0
+else
+  echo "WARN: link_decompilation.vy n'est pas strictement compilable Vyper"
+  # Possible but utile pour vérifier dans Jenkins
+  exit 0
+fi
+
+# Non nécessaire, le script a déjà quitté au-dessus
+# echo "Fini : fichier link_decompilation.vy"
