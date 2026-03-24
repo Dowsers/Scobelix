@@ -34,10 +34,11 @@ pipeline {
         set -e
         . .venv/bin/activate
 
-        BYTECODE=$(curl -s -X POST "${WEB3_PROVIDER_URI}" \
+        RPC_RESPONSE=$(curl -s -X POST "${WEB3_PROVIDER_URI}" \
           -H "Content-Type: application/json" \
-          --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getCode\",\"params\":[\"${CONTRACT_ADDRESS}\",\"latest\"]}" \
-          | python3 -c "import sys,json; print(json.load(sys.stdin)['result'])")
+          --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getCode\",\"params\":[\"${CONTRACT_ADDRESS}\",\"latest\"]}")
+        echo "RPC response: $RPC_RESPONSE"
+        BYTECODE=$(echo "$RPC_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'])")
 
         if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "0x" ]; then
           echo "ERROR: bytecode empty for $CONTRACT_ADDRESS"
