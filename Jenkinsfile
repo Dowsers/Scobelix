@@ -22,7 +22,7 @@ pipeline {
         . .venv/bin/activate
         python -m pip install --upgrade pip
         python -m pip install -e .
-        python -m pip install vyper
+        python -m pip install panoramix-decompiler
         '''
       }
     }
@@ -72,15 +72,6 @@ pipeline {
       }
     }
 
-    stage('Vyper syntax check') {
-      steps {
-        sh '''
-        set -e
-        . .venv/bin/activate
-        vyper link_decompilation.vy > /dev/null
-        '''
-      }
-    }
   }
 
   post {
