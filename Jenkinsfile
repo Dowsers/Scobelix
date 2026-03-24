@@ -22,7 +22,7 @@ pipeline {
         . .venv/bin/activate
         python -m pip install --upgrade pip
         python -m pip install -e .
-        python -m pip install vyper jq
+        python -m pip install vyper
         '''
       }
     }
@@ -36,7 +36,7 @@ pipeline {
         BYTECODE=$(curl -s -X POST "${WEB3_PROVIDER_URI}" \
           -H "Content-Type: application/json" \
           --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getCode\",\"params\":[\"${CONTRACT_ADDRESS}\",\"latest\"]}" \
-          | jq -r '.result')
+          | python3 -c "import sys,json; print(json.load(sys.stdin)['result'])")
 
         if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "0x" ]; then
           echo "ERROR: bytecode empty for $CONTRACT_ADDRESS"
