@@ -1,4 +1,5 @@
 import cProfile
+import json
 import logging
 import argparse
 import sys
@@ -37,6 +38,19 @@ def parse_args(args):
     )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--explain", action="store_true")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the decompiled contract's structured AST as JSON instead "
+        "of the pseudo-code text.",
+    )
+    parser.add_argument(
+        "--solidity",
+        action="store_true",
+        help="Print a best-effort Solidity reconstruction (see panoramix.solgen) "
+        "instead of the pseudo-code text. Approximation only - see the "
+        "generated file's header comment.",
+    )
 
     return parser.parse_args(args)
 
@@ -52,7 +66,15 @@ def print_decompilation(this_addr, args):
     else:
         decompilation = decompile_bytecode(this_addr, function_name)
 
-    print(decompilation.text)
+    if args.solidity:
+        from panoramix.solgen import generate_solidity
+
+        result = generate_solidity(decompilation)
+        print(result.solidity)
+    elif args.json:
+        print(json.dumps(decompilation.json, indent=2))
+    else:
+        print(decompilation.text)
 
 
 def main():
