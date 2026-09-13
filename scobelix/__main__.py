@@ -58,6 +58,15 @@ def parse_args(args):
         "and print a validity status line to stderr (skipped if solc isn't "
         "on PATH; solc is not a dependency of this package).",
     )
+    parser.add_argument(
+        "--combined-json",
+        action="store_true",
+        help="Print a single JSON object with the pseudo-code text, the "
+        "structured AST, and (if --solidity is also passed) the Solidity "
+        "reconstruction with its confidence/warnings - for callers that want "
+        "everything from one decompilation pass instead of invoking this CLI "
+        "multiple times. Takes precedence over --json/--solidity alone.",
+    )
 
     return parser.parse_args(args)
 
@@ -73,7 +82,29 @@ def print_decompilation(this_addr, args):
     else:
         decompilation = decompile_bytecode(this_addr, function_name)
 
-    if args.solidity:
+    if args.combined_json:
+        payload = {"text": decompilation.text, "json": decompilation.json}
+
+        if args.solidity:
+            from scobelix.solgen import generate_solidity
+
+            result = generate_solidity(decompilation)
+            payload["solidity"] = result.solidity
+            payload["solgen_confidence"] = result.confidence
+            payload["solgen_warnings"] = result.warnings
+
+            if args.validate_solidity:
+                from scobelix.solgen import validate
+
+                v = validate(result)
+                payload["solgen_validation"] = {
+                    "status": v.status,
+                    "errors": v.errors,
+                    "warnings": v.warnings,
+                }
+
+        print(json.dumps(payload))
+    elif args.solidity:
         from scobelix.solgen import generate_solidity
 
         result = generate_solidity(decompilation)
