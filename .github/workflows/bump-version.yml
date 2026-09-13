@@ -20,13 +20,32 @@ jobs:
         run: |
           python3 - <<'EOF'
           import re
+          import subprocess
+
+          def sh(cmd):
+              return subprocess.check_output(cmd, shell=True, text=True).strip()
 
           path = "pyproject.toml"
           with open(path) as f:
               content = f.read()
 
           m = re.search(r'^version = "(\d+)\.(\d+)\.(\d+)"', content, re.MULTILINE)
-          major, minor, patch = map(int, m.groups())
+          file_version = tuple(map(int, m.groups()))
+
+          # pyproject.toml peut avoir dérivé derrière le dernier tag réel (un
+          # tag posé sans bump du fichier, ou l'inverse) : on part du MAX des
+          # deux, sinon le tag qu'on pousse plus bas pourrait déjà exister
+          # (le push échouerait) ou revenir en arrière.
+          raw = sh("git for-each-ref --sort=-v:refname --format='%(refname:short)' refs/tags")
+          rel_re = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')
+          tag_version = (0, 0, 0)
+          for t in raw.splitlines():
+              rm = rel_re.match(t)
+              if rm:
+                  tag_version = tuple(map(int, rm.groups()))
+                  break
+
+          major, minor, patch = max(file_version, tag_version)
           new_version = f"{major}.{minor}.{patch + 1}"
 
           # substitution ciblée sur la seule ligne "version = ..." : préserve
@@ -38,6 +57,8 @@ jobs:
           )
           with open(path, "w") as f:
               f.write(content)
+          print(f"pyproject.toml: {'.'.join(map(str, file_version))} (latest tag: "
+                f"{'.'.join(map(str, tag_version))}) -> {new_version}")
           EOF
 
       - name: Commit and push changes
@@ -47,3 +68,13 @@ jobs:
           git add pyproject.toml
           git diff --cached --quiet || git commit -m "chore: bump version [skip ci]"
           git push origin Tokenix
+
+      - name: Tag the new version
+        # pyproject.toml reste la source de vérité (Poetry en dépend) ; ce tag
+        # marque juste le commit correspondant à cette version, pour que
+        # process.py::_version() côté tarkastus_server (qui lit `git describe
+        # --tags`) reflète la bonne version sans attendre un tag manuel.
+        run: |
+          NEW_VERSION=$(grep -m1 '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')
+          git tag "v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
