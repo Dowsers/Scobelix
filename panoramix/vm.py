@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import sys
 from copy import copy
@@ -71,7 +72,7 @@ def find_nodes(node, f):
     return res
 
 
-MAX_NODE_COUNT = 500_000
+MAX_NODE_COUNT = int(os.environ.get("PANORAMIX_MAX_NODE_COUNT", "500000"))
 node_count = 0
 
 

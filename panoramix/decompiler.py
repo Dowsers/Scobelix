@@ -16,8 +16,17 @@ from panoramix.prettify import explain, pprint_repr, pprint_trace, pretty_type
 from panoramix.vm import VM
 from panoramix.whiles import make_whiles
 from panoramix.utils.helpers import C, rewrite_trace
+from panoramix.utils.proxy_detect import detect_proxy_slots
 
 logger = logging.getLogger(__name__)
+
+# Per-function decompilation budget: a function that doesn't finish in time is
+# added to `problems` and skipped, the rest of the contract still decompiles.
+FUNCTION_TIMEOUT = int(os.environ.get("PANORAMIX_FUNCTION_TIMEOUT", str(60 * 12)))
+# Budgets passed down to the symbolic VM run and to the goto->while structuring
+# pass for a single function.
+VM_RUN_TIMEOUT = int(os.environ.get("PANORAMIX_VM_RUN_TIMEOUT", "600"))
+WHILES_TIMEOUT = int(os.environ.get("PANORAMIX_WHILES_TIMEOUT", "600"))
 
 
 @dataclasses.dataclass
@@ -25,6 +34,7 @@ class Decompilation:
     text: str = ""
     asm: list = dataclasses.field(default_factory=list)
     json: dict = dataclasses.field(default_factory=dict)
+    proxy_hints: list = dataclasses.field(default_factory=list)
 
 
 # Derives from BaseException so it bypasses all the "except Exception" that are
@@ -154,10 +164,10 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
             if target > 1 and loader.lines[target][1] == "jumpdest":
                 target += 1
 
-            @timeout_decorator.timeout(60 * 12, timeout_exception=TimeoutInterrupt)
+            @timeout_decorator.timeout(FUNCTION_TIMEOUT, timeout_exception=TimeoutInterrupt)
             def dec():
                 logger.info(" -> Interpreting EVM on function...")
-                trace = VM(loader).run(target, stack=stack, timeout=600)
+                trace = VM(loader).run(target, stack=stack, timeout=VM_RUN_TIMEOUT)
                 explain("Initial decompiled trace", trace[1:])
 
                 if "--explain" in sys.argv:
@@ -167,7 +177,7 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
                     explain("Without assembly", trace)
 
                 logger.info(" -> Cleaning up AST, identifying loops...")
-                trace = make_whiles(trace, timeout=600)
+                trace = make_whiles(trace, timeout=WHILES_TIMEOUT)
                 explain("final", trace)
 
                 if "--explain" in sys.argv:
@@ -201,8 +211,11 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
     for l in loader.disasm():
         decompilation.asm.append(l)
 
+    decompilation.proxy_hints = detect_proxy_slots(loader.parsed_lines)
+
     try:
         decompilation.json = contract.json()
+        decompilation.json["proxy_hints"] = decompilation.proxy_hints
         # This would raise a TypeError if it's not serializable, which is an
         # important assumption people can make.
         with open(os.devnull, "w") as f:
@@ -218,6 +231,14 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
         """
 
         print(C.gray + "# Palkeoramix decompiler. " + C.end)
+
+        if decompilation.proxy_hints:
+            print(C.gray + "#")
+            print("#  Detected known proxy storage slot(s):")
+            for hint in decompilation.proxy_hints:
+                print(f"{C.end}{C.gray}#  - {C.end}{hint['slot']} ({hint['description']}){C.gray}")
+            print("#" + C.end)
+            print()
 
         if len(problems) > 0:
             print(C.gray + "#")

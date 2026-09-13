@@ -1,17 +1,24 @@
 import json
 import os
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[4]
-ABI_ROOTS = [
-    ROOT / "defillama_adapters" / "projects",
-    ROOT / "src" / "defillama_adapters" / "projects",
-]
-OUT_PATH = ROOT / "src" / "panoramix_palkeo" / "panoramix" / "data" / "local_sigs.json"
-SOLC = Path("/home/armand/.solcx/solc-v0.6.12")
+from web3 import Web3
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Colon-separated list of directories to scan (recursively) for abi*.json
+# files. Not set by default: this repo does not vendor any external ABI
+# corpus, so callers must point this at one (e.g. a directory of verified
+# contract ABIs) before running this tool.
+_abi_roots_env = os.environ.get("SCOBELIX_ABI_ROOTS", "")
+ABI_ROOTS = [Path(p) for p in _abi_roots_env.split(":") if p]
+
+OUT_PATH = Path(
+    os.environ.get(
+        "SCOBELIX_SIGS_OUT", str(REPO_ROOT / "panoramix" / "data" / "local_sigs.json")
+    )
+)
 
 
 def load_abi(path: Path):
@@ -77,16 +84,6 @@ def format_type(entry):
     if is_supported_type(t):
         return t
     return None
-
-
-def needs_location(type_str: str) -> bool:
-    if "[]" in type_str or "[" in type_str:
-        return True
-    if type_str in ("bytes", "string"):
-        return True
-    if "(" in type_str:
-        return True
-    return False
 
 
 def abi_functions(abi_items):
@@ -166,41 +163,27 @@ def walk_misc_signatures(data):
     return res
 
 
-def build_solidity(sig_map):
-    lines = ["pragma solidity 0.6.12;", "interface LocalSigDump {"]
-    for sig in sorted(sig_map.keys()):
-        name, types = sig.split("(", 1)
-        type_list = types[:-1]
-        params = []
-        if type_list:
-            for idx, t in enumerate(type_list.split(",")):
-                loc = " calldata" if needs_location(t) else ""
-                params.append(f"{t}{loc} _p{idx}")
-        params_str = ", ".join(params)
-        lines.append(f"    function {name}({params_str}) external;")
-    lines.append("}")
-    return "\n".join(lines)
-
-
-def parse_solc_hashes(output: str):
-    mapping = {}
-    for line in output.splitlines():
-        line = line.strip()
-        if not line or ":" not in line:
-            continue
-        m = re.match(r"^([0-9a-fA-F]{8}):\s+(.+)$", line)
-        if not m:
-            continue
-        selector = "0x" + m.group(1).lower()
-        sig = m.group(2).strip()
-        mapping[sig] = selector
-    return mapping
+def compute_selector(sig: str) -> str:
+    """4-byte function selector, computed directly with keccak256 - no solc
+    (or any other external binary) required."""
+    digest = bytes(Web3.keccak(text=sig))[:4]
+    return "0x" + digest.hex()
 
 
 def main():
+    if not ABI_ROOTS:
+        print(
+            "SCOBELIX_ABI_ROOTS is not set - nothing to scan. Set it to a "
+            "':'-separated list of directories containing abi*.json files "
+            "and re-run, e.g.:\n"
+            "  SCOBELIX_ABI_ROOTS=/path/to/abis python -m panoramix.tools.build_local_sigs"
+        )
+        return
+
     abi_paths = []
     for root in ABI_ROOTS:
         if not root.exists():
+            print(f"warning: {root} does not exist, skipping")
             continue
         abi_paths.extend(root.rglob("abi*.json"))
 
@@ -236,36 +219,16 @@ def main():
                         continue
                 sig_inputs[sig] = inputs
 
-    solidity = build_solidity(sig_inputs)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sol_path = Path(tmpdir) / "local_sigs.sol"
-        sol_path.write_text(solidity, encoding="utf-8")
-        solc = str(SOLC) if SOLC.exists() else "solc"
-        result = subprocess.run(
-            [solc, "--hashes", str(sol_path)],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(result.stderr)
-            raise SystemExit("solc --hashes failed")
-        sig_to_selector = parse_solc_hashes(result.stdout)
-
     out = {}
     conflicts = 0
-    for sig, selector in sig_to_selector.items():
-        inputs = sig_inputs.get(sig)
-        if inputs is None:
-            continue
+    for sig, inputs in sig_inputs.items():
+        selector = compute_selector(sig)
+        name = sig.split("(", 1)[0]
         if selector in out:
-            if out[selector]["name"] != sig.split("(")[0]:
+            if out[selector]["name"] != name:
                 conflicts += 1
             continue
-        out[selector] = {
-            "name": sig.split("(")[0],
-            "inputs": inputs,
-        }
+        out[selector] = {"name": name, "inputs": inputs}
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")

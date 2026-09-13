@@ -154,7 +154,7 @@ def rewrite_functions(functions):
     # (storage 256 0 (array idx (loc 6))
     # (storage 256 0 (map idx (loc 6))
 
-    storages_assoc = _sparser(storages)
+    storages_assoc = _sparser_resilient(storages)
 
     names = find_storage_names(functions)
     replace_names_in_assoc(names, storages_assoc)
@@ -453,6 +453,72 @@ def stor_replace_f(storages, f):
         res.append(("stor", size, off, internal_f(idx, f)))
 
     return res
+
+
+def _sparser_resilient(orig_storages):
+    """
+    Wraps _sparser() so a single unresolvable storage access (e.g. a deeply
+    embedded struct expression that trips one of the "deep embedding
+    unsupported" asserts in simplify.py) doesn't cause the *entire* contract to
+    lose all storage naming/typing - previously, contract.postprocess() would
+    catch any exception here and reset self.stor_defs to {} for every slot.
+
+    On failure, isolate the offending storage entry/entries one at a time and
+    retry without them, so every other slot still gets named and typed.
+    """
+    remaining = list(orig_storages)
+    excluded = []
+
+    while True:
+        try:
+            result = _sparser(remaining)
+            if excluded:
+                logger.warning(
+                    "Storage postprocessing: %d slot(s) excluded as unresolvable, "
+                    "%d slot(s) still resolved normally: %r",
+                    len(excluded),
+                    len(remaining),
+                    excluded,
+                )
+            return result
+        except Exception:
+            culprit = _find_unresolvable_storage(remaining)
+            if culprit is None:
+                # Not a single-entry issue (e.g. only fails combined, or the
+                # list is already empty) - give up rather than loop forever.
+                if excluded:
+                    logger.exception(
+                        "Storage postprocessing still fails after excluding %d "
+                        "slot(s); giving up on the remaining %d slot(s) too.",
+                        len(excluded),
+                        len(remaining),
+                    )
+                raise
+            remaining.remove(culprit)
+            excluded.append(culprit)
+
+
+def _find_unresolvable_storage(storages):
+    """
+    Return one storage entry that is unresolvable entirely on its own
+    (_sparser([entry]) itself raises), or None if no single entry is
+    self-contained-broken.
+
+    This tests entries in isolation (rather than "does removing this one
+    entry fix the whole remaining batch") so that several independent bad
+    entries are each still found and excluded, one per call - removing just
+    one of several simultaneously-bad entries wouldn't make the rest of the
+    batch pass anyway, which would previously make this look like "no single
+    culprit" and give up too early. The trade-off: a fault that only
+    manifests through an interaction between two otherwise-fine entries is
+    not attributable this way, and correctly falls through to None.
+    """
+    for entry in storages:
+        try:
+            _sparser([entry])
+        except Exception:
+            return entry
+    return None
 
 
 def _sparser(orig_storages):

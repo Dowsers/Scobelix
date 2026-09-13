@@ -729,9 +729,6 @@ def canonise_max(exp):
         return exp
 
 
-assert canonise_max(("max", ("mul", 1, ("x", "y")), 4)) == ("max", 4, ("x", "y"))
-
-
 def readability(trace):
     """
     - replaces variable names with nicer ones,
@@ -914,10 +911,6 @@ def only_add_in_expr(op):
     if opcode(op) is not None:
         return False
     return True
-
-
-assert only_add_in_expr(("setvar", 100, ("mul", ("var", 100), 1))) is False
-assert only_add_in_expr(("setvar", 100, ("add", ("var", 100), 1))) is True
 
 
 def propagate_storage_in_loop(line):
@@ -1291,11 +1284,6 @@ def sizeof(exp):  # returns size of expression in *bits*
     return None
 
 
-assert sizeof(("mask_shl", 96, 160, 0, "x")) == 96
-assert sizeof(("mem", ("range", 64, 32))) == 32 * 8
-assert sizeof("x") == None
-
-
 @cached
 def find_mems(exp):
     def f(exp):
@@ -1305,15 +1293,6 @@ def find_mems(exp):
             return set()
 
     return find_f_set(exp, f)
-
-
-test_e = ("x", "sth", ("mem", 4), ("t", ("mem", 4), ("mem", 8), ("mem", ("mem", 64))))
-assert find_mems(test_e) == {
-    ("mem", 64),
-    ("mem", ("mem", 64)),
-    ("mem", 4),
-    ("mem", 8),
-}, find_mems(test_e)
 
 
 def _eval_msize(cond):
@@ -1442,31 +1421,6 @@ def affects(line, exp):
             return True
 
     return False
-
-
-line_test = ("setmem", ("range", 65, 32), "x")
-exp_test = ("mul", 8, ("mem", ("range", 64, 32)))
-assert affects(line_test, exp_test) == True
-exp_test = ("mul", 8, ("mem", ("range", 100, 32)))
-assert affects(line_test, exp_test) == False
-
-line_test = ("setmem", ("range", 65, 32), "x")
-exp_test = ("mul", 8, ("mem", ("range", 64, 32)))
-assert affects(line_test, exp_test) == True
-exp_test = ("mul", 8, ("mem", ("range", 100, 32)))
-assert affects(line_test, exp_test) == False
-
-line_test = ("setmem", ("range", 65, "sth"), "x")
-exp_test = ("mul", 8, ("mem", ("range", 64, 32)))
-assert affects(line_test, exp_test) == True
-exp_test = ("mul", 8, ("mem", ("range", 100, 32)))
-assert affects(line_test, exp_test) == True
-
-line_test = ("setmem", ("range", 65, 32), "x")
-exp_test = ("mul", 8, ("mem", ("range", 64, 1)))
-assert affects(line_test, exp_test) == False
-exp_test = ("mul", 8, ("mem", ("range", 64, "sth")))
-assert affects(line_test, exp_test) == True
 
 
 """

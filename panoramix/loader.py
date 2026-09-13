@@ -26,7 +26,7 @@ cache_sigs = {
     False: {},
 }
 
-LOADER_TIMEOUT = 120
+LOADER_TIMEOUT = int(os.environ.get("PANORAMIX_LOADER_TIMEOUT", "120"))
 
 
 class Loader(EasyCopy):
