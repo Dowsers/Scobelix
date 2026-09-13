@@ -3,7 +3,7 @@ name = "scobelix"
 packages = [
     { include="scobelix", from="." },
 ]
-version = "0.7.1"
+version = "0.7.2"
 description = "A python decompiler for the EVM."
 authors = ["Dowsers <fv@dowsers.finance>"]
 
