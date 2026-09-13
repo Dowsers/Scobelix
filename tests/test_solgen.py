@@ -62,6 +62,79 @@ def test_sumloop_loopvar_declared_once_and_reused():
     assert "loopvar_0 = " in r.solidity
 
 
+def test_nested_mapping_gets_correct_depth_and_no_crash():
+    # regression: a single loc used as both allowances[a] (depth 1) and
+    # allowances[a][b] (depth 2) used to crash _resolve_storage
+    # (TypeError: unhashable type: 'list', the inner ("map", ...) node used
+    # as a dict key) and, once that was fixed, declared the slot as a
+    # single-level mapping(uint256=>uint256) - a second index into that is a
+    # solc type error, not just an approximation.
+    r = _generate("NestedStructMapping")
+
+    assert "mapping(uint256 => mapping(uint256 => uint256))" in r.solidity
+
+
+def test_yul_heavy_shift_and_mask_reconstructed():
+    r = _generate("YulHeavy")
+
+    # shl(4, and(a, 0xff)) - offset==0 with a non-zero shl, the case that
+    # used to fall through to an unresolved-opcode placeholder.
+    assert "(_param1 & 255) << 4" in r.solidity
+
+
+def test_vault_bool_param_coerced_not_left_as_bool_literal():
+    r = _generate("Vault")
+
+    # setPaused(bool) stores the calldata-decoded bool into a uint256 slot;
+    # emitting the raw Solidity `true`/`false` literal there used to produce
+    # `stor2 = (true & 255);` - a bool/int type error.
+    assert "true & 255" not in r.solidity
+    assert "= (true & 255)" not in r.solidity
+
+
+def test_known_event_resolved_with_real_name_and_args():
+    r = _generate("EventsEmitter")
+
+    assert "event Transfer(address indexed from, address indexed to, uint256 value);" in r.solidity
+    assert "emit Transfer(" in r.solidity
+    # args must land back in declaration order: from, to, value
+    assert "emit Transfer(address(uint160" in r.solidity
+
+
+def test_unknown_event_falls_back_to_generic_placeholder():
+    r = _generate("EventsEmitter")
+
+    # Ping(uint256) isn't in the well-known table - must not be silently
+    # invented as a fake Ping(...) event with guessed types.
+    assert "event Ping" not in r.solidity
+    assert "ScobelixUnresolvedEvent" in r.solidity
+
+
+def test_diamond_style_dispatch_two_calls_each_check_their_own_result():
+    # regression: vm.py's call-id counter (e.g. "delegatecall_10") is shared
+    # with unrelated operations (mload-introduced temporaries included), so
+    # a naive per-function "1st call = _1, 2nd call = _2" renumbering in
+    # solgen never matches it - the second call's success check used to
+    # resolve to an unrelated, always-zero placeholder, making it look like
+    # every call after the first had failed (an always-taken revert, not
+    # just an approximation).
+    r = _generate("MiniDiamond")
+
+    assert r.solidity.count(".delegatecall(msg.data)") == 2
+    assert "if ((!delegatecall_ok_1))" in r.solidity
+    assert "if ((!delegatecall_ok_2))" in r.solidity
+    # the old bug fell back to an unrelated, always-zero placeholder
+    # ("stor_extra_N") for the second call's success check instead of its
+    # own result variable.
+    assert "stor_extra" not in r.solidity
+
+
+def test_diamond_selector_mask_reconstructed_not_approximated():
+    r = _generate("MiniDiamond")
+    assert "not exactly reconstructed" not in r.solidity
+    assert not r.warnings
+
+
 def test_unresolvable_function_gets_explicit_stub_not_silently_dropped():
     fake_json = {
         "stor_defs": [],
@@ -80,7 +153,19 @@ def test_unresolvable_function_gets_explicit_stub_not_silently_dropped():
 
 
 @pytest.mark.skipif(SOLC is None, reason="solc not installed")
-@pytest.mark.parametrize("name", ["SimpleToken", "Eip1967Proxy", "SumLoop"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "SimpleToken",
+        "Eip1967Proxy",
+        "SumLoop",
+        "NestedStructMapping",
+        "YulHeavy",
+        "Vault",
+        "EventsEmitter",
+        "MiniDiamond",
+    ],
+)
 def test_generated_solidity_actually_compiles(name, tmp_path):
     r = _generate(name)
     sol_path = tmp_path / f"{name}.sol"
