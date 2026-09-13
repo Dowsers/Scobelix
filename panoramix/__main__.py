@@ -51,6 +51,13 @@ def parse_args(args):
         "instead of the pseudo-code text. Approximation only - see the "
         "generated file's header comment.",
     )
+    parser.add_argument(
+        "--validate-solidity",
+        action="store_true",
+        help="With --solidity, also compile the generated source with solc "
+        "and print a validity status line to stderr (skipped if solc isn't "
+        "on PATH; solc is not a dependency of this package).",
+    )
 
     return parser.parse_args(args)
 
@@ -71,6 +78,14 @@ def print_decompilation(this_addr, args):
 
         result = generate_solidity(decompilation)
         print(result.solidity)
+
+        if args.validate_solidity:
+            from panoramix.solgen import validate
+
+            v = validate(result)
+            print(f"# solc validation: {v.status}", file=sys.stderr)
+            for e in v.errors:
+                print(f"#   {e}", file=sys.stderr)
     elif args.json:
         print(json.dumps(decompilation.json, indent=2))
     else:
