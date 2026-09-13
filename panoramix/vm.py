@@ -292,6 +292,31 @@ class VM(EasyCopy):
             node.run()
 
     def replace_loops(self, root):
+        # KNOWN LIMITATION (see tests/test_golden_fixtures.py::
+        # test_loop_accumulator_value_is_tracked, xfail): a loop-carried
+        # accumulator that isn't the loop's own condition variable (e.g.
+        # `total += i` alongside a `for (i=0; i<n; i++)` counter) is
+        # frequently NOT detected as a loop variable here, even though
+        # fold_stacks() below compares the *entire* stack and would flag it
+        # if it differed at this exact point. Root-caused (2026, diagnostic
+        # session) by instrumenting fold_stacks() on both optimizer-on and
+        # optimizer-off bytecode for a minimal `total += i` loop: the
+        # counter slot (`i`) is reliably flagged as changed on the very
+        # first jd revisit, but the accumulator slot (`total`) compares
+        # equal at that same point even though it demonstrably changes
+        # over the full loop - meaning the cycle in `node.history` that
+        # triggers this comparison is detected on a traversal path that
+        # hasn't yet executed the accumulator's update, not that the
+        # comparison itself is wrong. Understanding *why* the BFS
+        # exploration order (see VM.run()'s node queue) reaches that jd a
+        # second time before covering the accumulator's update - across
+        # both a solc-optimized shared "checked add" subroutine call and
+        # plain unoptimized inlined code, so it isn't just a subroutine-
+        # sharing artifact - needs deeper study of the history/depth
+        # mechanism than is safe to patch speculatively: this same
+        # fold_stacks()/jd-history pair is what every loop in every
+        # contract relies on, so a wrong fix here has very wide, silent
+        # blast radius. Left as documented debt rather than papered over.
         nodes = find_nodes(root, lambda n: n.trace is None)
 
         for node in nodes:
