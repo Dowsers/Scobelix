@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "panoramix-decompiler"
+name = "scobelix"
 packages = [
-    { include="panoramix", from="." },
+    { include="scobelix", from="." },
 ]
 version = "0.7.0"
 description = "A python decompiler for the EVM."
-authors = ["palkeo <panoramix@palkeo.com>"]
+authors = ["Dowsers <fv@dowsers.finance>"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4"
@@ -20,7 +20,7 @@ appdirs = "^1.4"
 pytest = "^7"
 
 [tool.poetry.scripts]
-panoramix = "panoramix.__main__:main"
+scobelix = "scobelix.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=1.2.0"]

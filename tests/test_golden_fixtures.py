@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from panoramix.decompiler import decompile_bytecode
+from scobelix.decompiler import decompile_bytecode
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "bytecode"
 

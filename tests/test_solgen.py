@@ -1,5 +1,5 @@
 """
-Tests for panoramix.solgen - the opcode/AST -> Solidity generator.
+Tests for scobelix.solgen - the opcode/AST -> Solidity generator.
 
 Two levels of coverage:
   - structural checks on the generated text (state vars, function shape,
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from panoramix.decompiler import decompile_bytecode
-from panoramix.solgen import generate_solidity
+from scobelix.decompiler import decompile_bytecode
+from scobelix.solgen import generate_solidity
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "bytecode"
 

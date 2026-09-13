@@ -1,4 +1,4 @@
-from panoramix.utils.proxy_detect import detect_proxy_slots
+from scobelix.utils.proxy_detect import detect_proxy_slots
 
 
 def test_no_hints_on_empty_input():

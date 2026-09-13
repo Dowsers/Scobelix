@@ -2,7 +2,7 @@ import shutil
 
 import pytest
 
-from panoramix.solgen.validate import validate_solidity
+from scobelix.solgen.validate import validate_solidity
 
 SOLC = shutil.which("solc")
 

@@ -1,5 +1,5 @@
-Panoramix
-=========
+Scobelix
+========
 
 This is an EVM decompiler.
 
@@ -14,7 +14,7 @@ The code quality is still not great and the software is complex, it's mostly res
 ## Installation
 
 ```console
-$ pip install panoramix-decompiler
+$ pip install scobelix
 ```
 
 ## Running
@@ -22,13 +22,13 @@ $ pip install panoramix-decompiler
 You can specify a web3 provider using the environment variable `WEB3_PROVIDER_URI`. In this case a local provider was set.
 
 ```console
-$ WEB3_PROVIDER_URI=http://localhost:7545 panoramix 0x0d94D81FD712126E7f320b5B10537D01d6a01563
+$ WEB3_PROVIDER_URI=http://localhost:7545 scobelix 0x0d94D81FD712126E7f320b5B10537D01d6a01563
 ```
 
 You can also provide the bytecode for decompilation.
 
 ```console
-$ panoramix 6004600d60003960046000f30011223344
+$ scobelix 6004600d60003960046000f30011223344
 ```
 
 ## Examples

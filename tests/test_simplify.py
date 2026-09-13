@@ -1,5 +1,5 @@
 """
-Regression tests for panoramix/simplify.py.
+Regression tests for scobelix/simplify.py.
 
 These used to be bare `assert` statements executed as a side effect of
 importing the module (a form of informal doctest). That meant: (1) they were
@@ -8,7 +8,7 @@ interpreter were ever run with `-O`/`PYTHONOPTIMIZE` (which strips `assert`).
 Moved here as real, always-executed tests.
 """
 
-from panoramix.simplify import affects, canonise_max, find_mems, only_add_in_expr, sizeof
+from scobelix.simplify import affects, canonise_max, find_mems, only_add_in_expr, sizeof
 
 
 def test_canonise_max():

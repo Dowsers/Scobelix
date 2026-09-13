@@ -43,9 +43,9 @@ jobs:
         run: python -m pytest tests/ -v
 
       - name: Lint (report only - not a merge gate yet)
-        # The inherited decompiler engine (panoramix/) has ~14k lines of
+        # The inherited decompiler engine (scobelix/) has ~14k lines of
         # pre-existing flake8 findings (unused imports, E721, long lines).
         # Cleaning that up is a separate, deliberate pass - not something to
         # bundle silently into unrelated feature/hardening work. This step
         # surfaces new findings without blocking the build.
-        run: python -m flake8 panoramix/ || true
+        run: python -m flake8 scobelix/ || true

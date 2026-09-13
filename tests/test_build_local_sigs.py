@@ -1,4 +1,4 @@
-from panoramix.tools.build_local_sigs import compute_selector
+from scobelix.tools.build_local_sigs import compute_selector
 
 
 def test_compute_selector_matches_well_known_transfer():

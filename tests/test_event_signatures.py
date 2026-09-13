@@ -1,4 +1,4 @@
-from panoramix.solgen.event_signatures import KNOWN_EVENT_SIGNATURES
+from scobelix.solgen.event_signatures import KNOWN_EVENT_SIGNATURES
 
 
 def test_transfer_topic0_matches_well_known_value():

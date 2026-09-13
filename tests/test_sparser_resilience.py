@@ -1,6 +1,6 @@
 """
 Regression tests for the storage-postprocessing resilience fix
-(panoramix/sparser.py::_sparser_resilient).
+(scobelix/sparser.py::_sparser_resilient).
 
 Before this fix, contract.py::postprocess() caught any exception from
 sparser.rewrite_functions() and reset self.stor_defs to {} for the *entire*
@@ -14,7 +14,7 @@ that isolation logic directly against a stubbed `_sparser`, independent of
 the real (complex, heuristic) storage-parsing engine.
 """
 
-import panoramix.sparser as sparser
+import scobelix.sparser as sparser
 
 
 def test_no_failures_returns_normal_result(monkeypatch):
