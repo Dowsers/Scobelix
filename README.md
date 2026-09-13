@@ -6,7 +6,8 @@ into readable pseudo-code, a structured JSON AST, or a best-effort Solidity
 reconstruction.
 
 It's a fork of the Panoramix original repo that's not maintained actively by
-its author anymore: https://github.com/eveem-org/panoramix.git
+its author anymore: https://github.com/eveem-org/panoramix.git, by way of
+its author palkeo's own continuation at https://github.com/palkeo/panoramix.
 
 The goal of this fork is to maintain Panoramix in a decent shape, fix some crashes, implement missing opcodes...
 I also got rid of the "tilde" syntax that was using a custom python encoding and use vanilla Python instead. And I made it a proper python package that can be imported.
