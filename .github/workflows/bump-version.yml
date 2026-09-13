@@ -1,0 +1,49 @@
+name: Bump Scobelix version on Tokenix merge
+
+on:
+  push:
+    branches:
+      - Tokenix
+
+jobs:
+  bump-version:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.BUMP_VERSION_TOKEN }}
+
+      - name: Bump version in pyproject.toml
+        run: |
+          python3 - <<'EOF'
+          import re
+
+          path = "pyproject.toml"
+          with open(path) as f:
+              content = f.read()
+
+          m = re.search(r'^version = "(\d+)\.(\d+)\.(\d+)"', content, re.MULTILINE)
+          major, minor, patch = map(int, m.groups())
+          new_version = f"{major}.{minor}.{patch + 1}"
+
+          # substitution ciblée sur la seule ligne "version = ..." : préserve
+          # tout le reste du fichier tel quel (pas de reformatage TOML complet).
+          content = re.sub(
+              r'^version = "\d+\.\d+\.\d+"',
+              f'version = "{new_version}"',
+              content, count=1, flags=re.MULTILINE,
+          )
+          with open(path, "w") as f:
+              f.write(content)
+          EOF
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git diff --cached --quiet || git commit -m "chore: bump version [skip ci]"
+          git push origin Tokenix
