@@ -10,8 +10,8 @@ its author anymore: https://github.com/eveem-org/panoramix.git, by way of
 its author palkeo's own continuation at https://github.com/palkeo/panoramix.
 
 The goal of this fork is to maintain Panoramix in a decent shape, fix some crashes, implement missing opcodes...
-I also got rid of the "tilde" syntax that was using a custom python encoding and use vanilla Python instead. And I made it a proper python package that can be imported.
-There is also a better support of timeouts, as instead of stopping entirely we will fallback and print whatever we decompiled even if it's not complete.
+It also got rid of the "tilde" syntax that was using a custom python encoding, using vanilla Python instead, and became a proper python package that can be imported.
+There is also better support for timeouts: instead of stopping entirely, it falls back and prints whatever was decompiled even if it's not complete.
 
 The code quality is still not great and the software is complex, it's mostly reserved for advanced users.
 
