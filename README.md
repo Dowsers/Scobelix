@@ -112,24 +112,3 @@ Windows is not supported currently.
 Decompilation - and even more so the `--solidity` reconstruction - is
 inherently approximate. Treat the output as a strong starting point for
 manual review, not as verified source code.
-
-## Changelog
-
-### 0.7.0
-
- * Added `scobelix.solgen`: best-effort AST -> Solidity reconstruction
-   (`--solidity`), with an optional solc-based validator (`--validate-solidity`).
- * Storage-layout recovery no longer loses every slot's name/type when a
-   single slot is unresolvable.
- * Detection of known EIP-1967/EIP-1822 proxy storage slots.
- * `build_local_sigs.py` no longer depends on a broken `solc` subprocess call.
- * Added a real pytest suite (8 compiled fixtures) and GitHub Actions CI.
- * Renamed the package from `panoramix`/`panoramix-decompiler` to `scobelix`.
-
-### 0.5.0
-
- * Added support for the BASEFEE opcode.
- * Updated bytecode database / ABI definitions.
- * Ability to decompile the Solidity-generated Panic reverts.
- * Lots of simplification / code cleanup.
- * Moved to Poetry as the dependency management tool.
