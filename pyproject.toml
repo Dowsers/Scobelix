@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "panoramix-decompiler"
+name = "scobelix"
 packages = [
-    { include="panoramix", from="." },
+    { include="scobelix", from="." },
 ]
-version = "0.6.1"
+version = "0.7.0"
 description = "A python decompiler for the EVM."
-authors = ["palkeo <panoramix@palkeo.com>"]
+authors = ["Dowsers <fv@dowsers.finance>"]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4"
@@ -16,9 +16,20 @@ web3 = {version = "6.0.0-beta.8", allow-prereleases = true}
 timeout_decorator = "^0.5"
 appdirs = "^1.4"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7"
+
 [tool.poetry.scripts]
-panoramix = "panoramix.__main__:main"
+scobelix = "scobelix.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=1.2.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# web3==6.0.0-beta.8 registers a pytest11 entry point (web3.tools.pytest_ethereum)
+# that fails to import against modern eth_typing/setuptools - unrelated to this
+# project's own tests, so it's disabled rather than pinning web3 to a newer,
+# still-beta release just to fix plugin autoloading.
+addopts = "-p no:pytest_ethereum"

@@ -22,7 +22,7 @@ pipeline {
         . .venv/bin/activate
         python -m pip install --upgrade pip
         python -m pip install -e .
-        python -m pip install panoramix-decompiler
+        python -m pip install pytest flake8
         '''
       }
     }
@@ -46,7 +46,7 @@ pipeline {
           exit 1
         fi
 
-        panoramix "$BYTECODE" 2>/dev/null \
+        scobelix "$BYTECODE" 2>/dev/null \
           | sed -r 's/\\x1B\\[[0-9;]*[A-Za-z]//g' \
           > link_decompilation.vy
 
