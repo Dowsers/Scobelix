@@ -44,7 +44,7 @@ from scobelix.core.algebra import (
     to_bytes,
     try_add,
 )
-from scobelix.core.masks import find_mask
+from scobelix.core.masks import find_mask, mask_runs
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,51 @@ def cmp_to_key(mycomp):
     return K(mycomp)
 
 
+ADDRESS_ATOMS = ("caller", "origin", "address", "coinbase")
+BOOLEAN_OPS = ("bool", "iszero", "lt", "gt", "le", "ge", "slt", "sgt", "sle", "sge", "eq")
+
+
+def value_width(exp):
+    """
+    An upper bound, in bits, of the value of `exp`: its bits at and above
+    that position are zero. 256 when nothing is known (any word).
+    """
+    if type(exp) == int:
+        return max(0, min(exp.bit_length(), 256)) if exp >= 0 else 256
+    if exp in ADDRESS_ATOMS:
+        return 160
+    op = opcode(exp)
+    if op in BOOLEAN_OPS:
+        return 1
+    if (m := match(exp, ("storage", ":int:size", Any, Any))) and 0 <= m.size <= 256:
+        return m.size
+    if (m := match(exp, ("mem", ("range", Any, ":int:n")))) and 0 <= m.n <= 32:
+        return bits(m.n)
+    if (m := match(exp, ("bytes", ":int:n", Any))) and 0 <= m.n <= 32:
+        return bits(m.n)
+    if m := match(exp, ("mask_shl", ":int:size", ":int:off", ":int:shl", ":inner")):
+        # the bits [off, off + size) of the inner value, moved by shl
+        top = min(m.off + m.size, value_width(m.inner)) + m.shl
+        return max(0, min(top, 256))
+    if op == "or":
+        return max(value_width(e) for e in exp[1:])
+    return 256
+
+
+def narrow(value, size):
+    """`value` as a value of `size` bits: itself when it already fits (a
+    wider mask around a value that fits is dropped), else its low bits."""
+    while (
+        (m := match(value, ("mask_shl", ":int:size", 0, 0, ":inner")))
+        and m.size >= size
+        and value_width(m.inner) <= size
+    ):
+        value = m.inner
+    if value_width(value) <= size:
+        return value
+    return mask_op(value, size=size)
+
+
 def split_or(value):
     orig_value = value
 
@@ -117,22 +162,32 @@ def split_or(value):
                 "caller",
             )  # does weird things if size == 1, in loops.activateSafeMode
 
-        if row == "block.timestamp":
-            row = (
-                "mask_shl",
-                64,
-                0,
-                0,
-                "caller",
-            )  # does weird things if size == 1, in loops.activateSafeMode
-
         if m := match(row, ("mul", 1, ":val")):
             row = m.val
+
+        if (
+            (m := match(row, ("and", ":int:mask", ":inner")))
+            or (m := match(row, ("and", ":inner", ":int:mask")))
+        ) and -(2**256) < m.mask < 2**256:
+            # and(M, x) with a mask M of several runs of ones (the fields a
+            # packed write keeps): one row per run, the field of x it keeps.
+            # (A single run is folded into a mask_shl by the simplifier.)
+            # Fields are whole bytes: any other mask is bit arithmetic, and
+            # the value stays whole.
+            runs = mask_runs(m.mask % 2**256)  # a negative int is a two's complement word
+            if runs and all(size % 8 == 0 and start % 8 == 0 for size, start in runs):
+                for size, start in runs:
+                    ret_rows.append(
+                        (size, start, mask_op(m.inner, size=size, offset=start, shr=start))
+                    )
+                continue
 
         if opcode(row) == "mask_shl" and all_concrete(row):
             row = apply_mask(row[4] if row[4] < 256 else 256, row[1], row[2], row[3])
 
         if type(row) in [int, float]:
+            if row == 0:
+                continue  # contributes no bits (find_mask would give an empty row at 256)
             size, offset = find_mask(row)
             shl = 0
             row = ("mask_shl", size, offset, 0, row)
@@ -151,7 +206,9 @@ def split_or(value):
             continue
 
         if opcode(row) != "mask_shl":
-            return [(256, 0, value)]
+            # the whole value, never one of its terms (`value` is reused
+            # for the rows below)
+            return [(256, 0, orig_value)]
 
         assert opcode(row) == "mask_shl"
         _, size, offset, shl, value = row
@@ -161,8 +218,18 @@ def split_or(value):
         shl = sub_op(shl, stor_offset)
         if type(value) == int:
             value = apply_mask(value, size, offset, shl)
+            if value == 0:
+                continue  # no bits: the hole is filled with zeroes below
 
-        elif (m := match(value, ("mem", ":idx"))) and add_op(offset, shl) == 0:
+        elif (
+            (m := match(value, ("mem", ":idx")))
+            and add_op(offset, shl) == 0
+            and type(size) == int
+            and type(offset) == int
+            and size % 8 == 0
+            and offset % 8 == 0
+            and safe_le_op(add_op(to_bytes(size)[0], to_bytes(offset)[0]), m.idx[2]) is True
+        ):
             new_memloc = apply_mask_to_range(m.idx, size, offset)
             value = ("mem", new_memloc)
 
@@ -227,7 +294,21 @@ def split_or(value):
 
     for r in ret_rows:
         if type(r[1]) != int or type(r[0]) != int:
-            return [(256, 0, value)]
+            return [(256, 0, orig_value)]  # rows of runtime size: not split
+        if r[1] < pos:
+            # the row starts inside the previous one: when the previous row's
+            # value fits below it (a bool, an address or a narrow field shifted
+            # into place, whose or'ed bits above are zero), the previous row
+            # ends where this one starts; otherwise the rows really overlap and
+            # the value stays whole
+            if not result:
+                return [(256, 0, orig_value)]  # a row below bit 0: not split
+            p_size, p_off, p_val = result[-1]
+            fit = r[1] - p_off
+            if fit <= 0 or value_width(p_val) > fit:
+                return [(256, 0, orig_value)]
+            result[-1] = (fit, p_off, narrow(p_val, fit))
+            pos = r[1]
         if r[1] > pos:
             result.append((r[1] - pos, pos, 0))
 
@@ -241,8 +322,10 @@ def split_or(value):
 
 
 def sizeof(exp):  # returns size of expression in *bits*
-    if m := match(exp, ("storage", ":size", ...)):
-        return m.size
+    if match(exp, ("storage", ":size", ...)):
+        # a storage field is a right-aligned value that fills a whole word
+        # once written to memory (its own width would shift a slice's offset)
+        return 256
 
     if m := match(exp, ("mask_shl", ":size", ":off", ":shl", Any)):
         return add_op(m.size, m.off, m.shl)
@@ -251,6 +334,9 @@ def sizeof(exp):  # returns size of expression in *bits*
         return bits(m.size_bytes)
 
     if m := match(exp, ("mem", ("range", Any, ":size_bytes"))):
+        return bits(m.size_bytes)
+
+    if m := match(exp, ("bytes", ":size_bytes", Any)):
         return bits(m.size_bytes)
 
     assert not match(exp, ("mem", ":idx"))
@@ -268,6 +354,60 @@ def sizeof(exp):  # returns size of expression in *bits*
     return None
 
 
+def self_width(exp):
+    """
+    Byte length of a node that carries its own length when it stands for a
+    byte string: memory and array slices, ("bytes", n, x) parts and
+    ("data", ...) blobs. None for a plain word expression.
+    """
+    op = opcode(exp)
+    if op == "bytes":
+        return exp[1]
+    if op == "mem" and opcode(exp[1]) == "range":
+        return exp[1][2]
+    if is_array(op) and len(exp) == 3:
+        return exp[2]
+    if op == "extcodecopy" and opcode(exp[2]) == "range":
+        return exp[2][2]
+    if op == "data":
+        return add_op(*[part_width(e) for e in exp[1:]])
+    return None
+
+
+def part_width(exp):
+    """Byte length of `exp` as a part of a byte string: its own length, 32
+    for a plain word, 0 for None (no bytes)."""
+    if exp is None:
+        return 0
+    w = self_width(exp)
+    return 32 if w is None else w
+
+
+def with_width(value, width):
+    """
+    `value` as a byte string of exactly `width` bytes. A plain word is 32
+    bytes and a slice or blob its own length; any other width is explicit:
+    ("bytes", width, value) = the low `width` bytes of the word `value`.
+    """
+    if width == 0:
+        return None
+    if value is None:
+        return ("bytes", width, 0)
+    if (m := match(value, ("mask_shl", ":size", 0, 0, ":inner"))) and sub_op(
+        m.size, bits(width)
+    ) == 0 and self_width(m.inner) is not None and sub_op(self_width(m.inner), width) == 0:
+        value = m.inner  # the mask keeps all of a byte string of that length
+    w = self_width(value)
+    if (w is None and width == 32) or (w is not None and sub_op(w, width) == 0):
+        return value
+    if opcode(value) == "bytes":
+        # the low `width` bytes of the low w bytes of x
+        if safe_le_op(width, value[1]) is True:
+            return ("bytes", width, value[2])
+        return ("bytes", width, mask_op(value[2], size=bits(value[1])))
+    return ("bytes", width, value)
+
+
 def split_setmem(line):
     if opcode(line) != "setmem":
         return [line]
@@ -275,6 +415,11 @@ def split_setmem(line):
     _, mem_idx, mem_val = line
 
     if opcode(mem_val) != "or":
+        return [line]
+
+    if opcode(mem_idx) == "range" and safe_le_op(mem_idx[2], 32) is not True:
+        # the rows below cover the 256 bits of one word: a longer range also
+        # holds the zero bytes the word is extended with on the left
         return [line]
 
     post_split = split_or(mem_val)
@@ -348,9 +493,129 @@ def split_store(line):
                 logger.warning("unusual store")
                 return [line]
 
-        return res
+        # the fields are written one after the other, and a store reads the
+        # slot as the stores before it left it: a field computed from other
+        # bits of the slot (b = a; a = 0 in one SSTORE) must be written first
+        ordered = order_field_stores(res, idx)
+        if ordered is None:
+            return [line]  # fields that read each other (a swap): the whole word
+        return ordered
     else:
         return [line]
+
+
+def slot_reads(exp):
+    """
+    The storage reads the value of `exp` depends on, as (slot, low, high):
+    the bits [low, high) of `slot`; (None, 0, 256) when the bits are not
+    known (any slot). A mask around a field read narrows it to the bits the
+    mask keeps.
+    """
+    reads = []
+
+    def walk(e, keep=None):
+        if type(e) not in (list, tuple) or len(e) == 0:
+            return
+        if m := match(e, ("storage", ":size", ":off", ":slot")):
+            walk(m.slot)
+            if (
+                type(m.size) == int
+                and type(m.off) == int
+                and 0 <= m.off
+                and 0 <= m.size
+                and m.off + m.size <= 256
+            ):
+                low, high = m.off, m.off + m.size
+                if keep is not None:  # the bits [k_off, k_off + k_size) of the field
+                    low, high = low + keep[0], min(high, low + keep[0] + keep[1])
+                if low < high:
+                    reads.append((m.slot, low, high))
+            else:
+                reads.append((None, 0, 256))
+            return
+        if (
+            (m := match(e, ("mask_shl", ":int:size", ":int:off", Any, ":inner")))
+            and opcode(m.inner) == "storage"
+            and m.size >= 0
+            and m.off >= 0
+        ):
+            walk(m.inner, (m.off, m.size))
+            return
+        for x in e[1:] if type(e[0]) == str else e:
+            walk(x)
+
+    walk(exp)
+    return reads
+
+
+def _keccak_slot(exp):
+    """A slot computed with keccak: a mapping value or the data of an array."""
+    if opcode(exp) == "sha3":
+        return True
+    return opcode(exp) == "add" and any(opcode(t) == "sha3" for t in exp[1:])
+
+
+def may_alias(slot, idx):
+    """False only when the storage slots `slot` and `idx` are provably
+    different: two constants, a constant distance apart, or a constant slot
+    of the layout and a slot computed with keccak (solc's layout relies on
+    them never meeting)."""
+    if slot is None or slot == idx:
+        return True
+    if type(slot) == int and type(idx) == int:
+        return False
+    for a, b in ((slot, idx), (idx, slot)):
+        if type(a) == int and 0 <= a < 2**64 and _keccak_slot(b):
+            return False
+    try:
+        diff = sub_op(slot, idx)
+    except Exception:
+        return True
+    return not (type(diff) == int and diff != 0)
+
+
+def order_field_stores(stores, idx):
+    """
+    `stores` (field stores of the slot `idx` that come from one SSTORE) in
+    an order where a store whose value reads bits of the slot runs before
+    the stores that write those bits: the given order unless such a read
+    forces another one. None when no order works (two fields that read each
+    other, a swap).
+    """
+    if len(stores) < 2:
+        return stores
+    reads = [
+        [(low, high) for slot, low, high in slot_reads(line[4]) if may_alias(slot, idx)]
+        for line in stores
+    ]
+    # every store computes the slot again: a slot computed from bits of
+    # itself that the stores write has no safe order
+    slot_bits = [(low, high) for slot, low, high in slot_reads(idx) if may_alias(slot, idx)]
+    if not any(reads) and not slot_bits:
+        return stores
+    if not all(type(line[1]) == int and type(line[2]) == int for line in stores):
+        return None
+    for line in stores:
+        if any(low < line[2] + line[1] and line[2] < high for low, high in slot_bits):
+            return None
+
+    before = [set() for _ in stores]  # before[j]: the stores that must run before store j
+    for i, ranges in enumerate(reads):
+        for j, line in enumerate(stores):
+            w_low, w_high = line[2], line[2] + line[1]
+            if i != j and any(low < w_high and w_low < high for low, high in ranges):
+                before[j].add(i)
+
+    order, placed = [], set()
+    while len(order) < len(stores):
+        for j in range(len(stores)):
+            if j not in placed and before[j] <= placed:
+                order.append(stores[j])
+                placed.add(j)
+                break
+        else:
+            return None
+    return order
 
 
 def memloc_overwrite(memloc, split):
@@ -406,28 +671,46 @@ assert memloc_overwrite(("range", 64, "x"), ("range", 70, add_op("unknown", 100)
 ]
 
 
-def slice_exp(exp, left, right):
+def slice_exp(exp, left, right, total=None):
+    """
+    Bytes [left, right) of `exp`, the value of a memory range of `total`
+    bytes: a slice node when `exp` is a slice, else an expression whose
+    value is those bytes (the caller gives it its width, see with_width).
+    A word stored in `total` bytes is its low `total` bytes, whatever its
+    own natural width (an mstore'd int or mask fills the whole 32 bytes).
+    `total` None: the natural width of `exp` (memloc.sizeof).
+    None when the bytes cannot be expressed.
+    """
     size = sub_op(right, left)
 
-    logger.debug("slicing %s, offset %i bytes, until %i bytes", exp, left, right)
+    logger.debug("slicing %s, offset %s bytes, until %s bytes", exp, left, right)
     # e.g. mem[32 len 10], 2, 4 == mem[34,2]
 
-    if m := match(exp, ("mem", ("range", ":rleft", ":rlen"))):
+    if (m := match(exp, ("mem", ("range", ":rleft", ":rlen")))) or (
+        (m := match(exp, (":op", ":rleft", ":rlen"))) and is_array(m.op)
+    ):
         rleft, rlen = m.rleft, m.rlen
-        if safe_le_op(add_op(left, size), rlen):
+        # a slice shorter than its range is right-aligned in it (a word)
+        pad = 0 if total is None else sub_op(total, rlen)
+        if pad != 0:
+            if safe_le_op(pad, left) is not True:
+                return None  # the bytes include the zero padding
+            left, right = sub_op(left, pad), sub_op(right, pad)
+        if safe_le_op(add_op(left, size), rlen) is not True:
+            return None
+        if opcode(exp) == "mem":
             return ("mem", ("range", add_op(rleft, left), size))
-        else:
-            return None
+        return (m.op, add_op(rleft, left), size)
 
-    if (m := match(exp, (":op", ":rleft", ":rlen"))) and is_array(m.op):
-        if safe_le_op(add_op(left, size), m.rlen):  # , (rleft, rlen, left, size, right)
-            return (m.op, add_op(m.rleft, left), size)
-        else:
-            return None
+    if opcode(exp) == "bytes" and total is None:
+        total = exp[1]
 
-    logger.debug("sizeof exp %i", sizeof(exp))
-    off = sub_op(sizeof(exp), bits(right))
-    logger.debug("applying mask, size 8*%i, offset %i", size, off)
+    if total is not None and left == 0 and sub_op(right, total) == 0:
+        return exp  # all of it
+
+    exp_bits = bits(total) if total is not None else sizeof(exp)
+    off = sub_op(exp_bits, bits(right))
+    logger.debug("applying mask, size 8*%s, offset %s", size, off)
 
     m = mask_op(exp, size=bits(size), offset=off, shr=off)
     logger.debug("result %s", m)
@@ -469,8 +752,8 @@ def splits_mem(memloc, split, memval, split_val=None):
     m_right = add_op(m_left, m_len)
     s_right = add_op(s_left, s_len)
 
-    logger.debug(f"applying split [{s_left} (len {s_len}) {s_right}]")
-    logger.debug(f"            to [{m_left} (len {m_len}) {m_right}]")
+    logger.debug("applying split [%s (len %s) %s]", s_left, s_len, s_right)
+    logger.debug("            to [%s (len %s) %s]", m_left, m_len, m_right)
 
     if not safe_ge_zero(s_len):
         s_len = "undefined"
@@ -485,31 +768,41 @@ def splits_mem(memloc, split, memval, split_val=None):
     left = safe_max_op(s_left, m_left)
     right = safe_min_op(s_right, m_right)
 
-    logger.debug(f"split overwrites memory from {left} to {right}")
+    logger.debug("split overwrites memory from %s to %s", left, right)
+
+    if left is None:
+        return []  # where the overwritten part begins is unknown
 
     # left/right relative to beginning of memory location
     in_left = sub_op(left, m_left)
-    in_right = sub_op(right, m_left)
+    in_right = sub_op(right, m_left) if right is not None else None
 
-    logger.debug(f"that is, relative to memloc {in_left} to {in_right}")
-    if safe_le_op(in_left, m_len) is not True or left is None:
+    logger.debug("that is, relative to memloc %s to %s", in_left, in_right)
+    if safe_le_op(in_left, m_len) is not True:
         logger.debug(
-            f"we are not sure that m_len: {m_len} is bigger than beginning of split, returning []"
+            "we are not sure that m_len: %s is bigger than beginning of split, returning []",
+            m_len,
         )
         return []
 
-    assert in_left == 0 if safe_le_op(right, m_left) else True
+    assert in_left == 0 if right is not None and safe_le_op(right, m_left) else True
 
-    val_left = slice_exp(memval, 0, in_left) if left is not None else None
+    if right is not None and safe_le_op(m_left, right) is not True:
+        # the split may end before memloc begins (the two may not overlap at
+        # all: replace_mem also splits when it cannot tell): [right, m_right)
+        # would then reach outside memloc, so nothing is known on the right
+        right = None
+
+    val_left = slice_exp(memval, 0, in_left, total=m_len) if left is not None else None
     val_right = (
-        slice_exp(memval, in_right, sub_op(m_right, m_left))
+        slice_exp(memval, in_right, sub_op(m_right, m_left), total=m_len)
         if right is not None
         else None
     )
     res = []
 
     left_len = sub_op(left, m_left)  # sizeof(val_left)
-    right_len = sub_op(m_right, right)
+    right_len = sub_op(m_right, right) if right is not None else None
 
     if safe_ge_zero(left_len) is True and left_len != 0 and val_left is not None:
         res.append((("range", m_left, left_len), val_left))
@@ -542,7 +835,12 @@ def splits_mem(memloc, split, memval, split_val=None):
         if safe_ge_zero(center_len) and center_len != 0:
             res.append((center_range, center_val))
 
-    if safe_ge_zero(right_len) is True and right_len != 0 and val_right is not None:
+    if (
+        right_len is not None
+        and safe_ge_zero(right_len) is True
+        and right_len != 0
+        and val_right is not None
+    ):
         res.append((("range", right, right_len), val_right))
 
     return res
@@ -641,8 +939,15 @@ def replace_max_with_MAX(exp):
 
 
 def fill_mem(exp, split, split_val):
+    """
+    The memory read `exp` (("mem", range)) after the write of `split_val`
+    to the range `split`: `exp` unchanged when they cannot be compared, the
+    written value when they are the same range, else ("data", ...) of the
+    parts read before, inside and after the written range. Every part has an
+    explicit byte width (see with_width).
+    """
     if exp == ("mem", split):
-        return split_val
+        return with_width(split_val, split[2])
 
     op, memloc = exp
     assert op == "mem"
@@ -654,8 +959,8 @@ def fill_mem(exp, split, split_val):
     m_right = add_op(m_left, m_len)
     s_right = add_op(s_left, s_len)
 
-    logger.debug(f"orig memloc: {m_left} len {m_len} right {m_right}")
-    logger.debug(f"split memloc: {s_left} len {s_len} right {s_right}")
+    logger.debug("orig memloc: %s len %s right %s", m_left, m_len, m_right)
+    logger.debug("split memloc: %s len %s right %s", s_left, s_len, s_right)
 
     if (
         safe_le_op(m_right, s_left) is not False
@@ -670,7 +975,7 @@ def fill_mem(exp, split, split_val):
     left = safe_max_op(s_left, m_left)
     right = safe_min_op(s_right, m_right)
 
-    logger.debug(f"split begins at {left} ends at {right}")
+    logger.debug("split begins at %s ends at %s", left, right)
 
     if left is None or right is None:
         return exp  # if we can't figure out which one is smaller/larger, we're not replacing
@@ -692,13 +997,13 @@ def fill_mem(exp, split, split_val):
     res_left = slice_exp(exp, 0, sub_op(left, m_left))
     if res_left is None:
         return exp
-    logger.debug(f"value left untouched on left: {res_left}")
+    logger.debug("value left untouched on left: %s", res_left)
 
     res_right = slice_exp(exp, sub_op(right, m_left), sub_op(m_right, m_left))
     if res_right is None:
         return exp
 
-    logger.debug(f"value right untouched on right: {res_right}")
+    logger.debug("value right untouched on right: %s", res_right)
 
     res = []
 
@@ -711,24 +1016,23 @@ def fill_mem(exp, split, split_val):
         return exp
 
     center_in_start = sub_op(left, s_left)
-    center_in_len = sub_op(right, s_left)
+    center_in_end = sub_op(right, s_left)
 
-    logger.debug(f"inserted value offset {center_in_start}, length {center_in_len}")
-    logger.debug(f"cutting this out of {split_val}")
+    logger.debug("inserted value offset %s, end %s", center_in_start, center_in_end)
+    logger.debug("cutting this out of %s", split_val)
 
-    res_center = slice_exp(split_val, center_in_start, center_in_len)
+    res_center = slice_exp(split_val, center_in_start, center_in_end, total=s_len)
 
-    logger.debug(f"inserted value after slicing: {res_center}")
+    logger.debug("inserted value after slicing: %s", res_center)
 
     if res_center is None:
         return exp
 
-    if safe_ge_zero(sizeof(res_center)) is True:
-        res.append(res_center)
-    else:
-        assert False, sizeof(
-            res_center
-        )  # this shouldn't happen considering the above checks?
+    res_center = with_width(res_center, sub_op(right, left))
+    if res_center is None:
+        return exp
+
+    res.append(res_center)
 
     if safe_ge_zero(sizeof(res_right)) is True:
         if sizeof(res_right) != 0:

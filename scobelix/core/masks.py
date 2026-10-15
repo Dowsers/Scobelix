@@ -1,38 +1,27 @@
 from scobelix.utils.helpers import cached, cleanup_mul_1, opcode, to_exp2
 
-from scobelix.core.algebra import mul_op, sub_op
+from scobelix.core.algebra import mul_op
 
 
 def type_to_mask(s):
+    """The width in bits of a value of the elementary type `s`, else None."""
     lookup = {
         "bool": 1,
-        "uint8": 8,
-        "uint16": 16,
-        "uint32": 32,
-        "uint64": 64,
-        "int8": 8,
-        "bytes1": 1,
-        "int16": 16,
-        "bytes2": 16,
-        "int32": 32,
-        "bytes4": 32,
-        "int64": 64,
-        "bytes8": 64,
-        "int128": 128,
-        "uint128": 128,
-        "bytes16": 128,
         "address": 160,
-        "uint256": 256,
-        "bytes32": 256,
-        "int256": 256,
         "int": 256,
         "uint": 256,
     }
 
     if s in lookup:
         return lookup[s]
-    else:
-        return None
+
+    for prefix, unit in (("uint", 1), ("int", 1), ("bytes", 8)):
+        if s.startswith(prefix) and s[len(prefix) :].isdigit():
+            n = int(s[len(prefix) :]) * unit
+            if 0 < n <= 256:
+                return n
+
+    return None
 
 
 def mask_to_type(num, force=False):
@@ -57,7 +46,10 @@ def mask_to_type(num, force=False):
     if num in lookup:
         return lookup[num]
 
-    elif force:
+    if 0 < num < 256 and num % 8 == 0:
+        return "uint%d" % num  # any byte count is a Solidity width
+
+    if force:
         if num > 256:
             return "big" + str(num)
 
@@ -72,14 +64,47 @@ def mask_to_type(num, force=False):
 
 
 def get_bit(num, pos):
-    return 1 if num & 2**pos > 0 else 0
+    return (num >> pos) & 1
 
 
 def mask_to_int(size, offset):
-    assert type(size) in (int, float), size
-    assert type(offset) in (int, float), offset
+    """
+    (2**size - 1) << offset (a negative offset shifts right) as bits of a
+    256-bit word: size and offset come from the code and are clamped to the
+    word, so that hostile ones cannot build huge ints.
+    """
+    assert type(size) == int, size
+    assert type(offset) == int, offset
 
-    return (2**size - 1) * (2**offset)
+    if offset < 0:
+        size, offset = size + offset, 0
+    size = min(size, 256 - offset)
+    if size <= 0:
+        return 0
+    return ((1 << size) - 1) << offset
+
+
+def mask_runs(num):
+    """The runs of ones of the 256-bit word `num`, lowest first, as
+    (size, offset) pairs: 0x00ff00ff -> [(8, 0), (8, 16)]."""
+    assert type(num) == int
+
+    runs = []
+    bit = 0
+    while bit < 256:
+        if get_bit(num, bit):
+            start = bit
+            while bit < 256 and get_bit(num, bit):
+                bit += 1
+            runs.append((bit - start, start))
+        else:
+            bit += 1
+    return runs
+
+
+assert mask_runs(0x00FF00FF) == [(8, 0), (8, 16)]
+assert mask_runs(2**256 - 1) == [(256, 0)]
+assert mask_runs(0) == []
 
 
 def find_mask(num):
@@ -116,16 +141,16 @@ def to_mask(num):
 
     if opcode(num) == "sub":
         if opcode(num[1]) == "exp" and num[2] == 1:
+            # (2**m)**k - 1: the low m*k bits, like the concrete case below
             mul = to_exp2(num[1][1])
             if mul == None:
                 return None
 
-            mask_pos = 0
             mask_len = mul_op(mul, num[1][2])
 
             # add type assert, that num[1][2] < 32?
 
-            return (mask_len, sub_op(256, mask_len))
+            return (mask_len, 0)
 
     if opcode(num) == "add" and num[1] == -1:
         return to_mask(

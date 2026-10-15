@@ -120,15 +120,17 @@ class Contract:
             else:
                 return []
 
-        stor_masks = frozenset(
+        # each mask once, in the order of the functions (not the hash order:
+        # the loops below stop at the first mask that disagrees)
+        stor_masks = dict.fromkeys(
             find_f_list([f.ast for f in self.functions], find_stor_masks)
         )
 
-        stor_loc_to_masks = collections.defaultdict(set)
-        stor_name_to_masks = collections.defaultdict(set)
+        stor_loc_to_masks = collections.defaultdict(list)
+        stor_name_to_masks = collections.defaultdict(list)
         for mask in stor_masks:
-            stor_loc_to_masks[get_loc(mask)].add(mask)
-            stor_name_to_masks[get_name(mask)].add(mask)
+            stor_loc_to_masks[get_loc(mask)].append(mask)
+            stor_name_to_masks[get_name(mask)].append(mask)
 
         def cleanup(exp):
             if m := match(exp, ("field", 0, ("stor", ("length", ":idx")))):
@@ -231,10 +233,12 @@ class Contract:
             return exp
 
         def arr_rem_mul(exp):
-            if m := match(
-                exp,
-                ("array", ("mask_shl", ":size", ":off", ":int:shl", ":idx"), ":loc"),
-            ):
+            if (
+                m := match(
+                    exp,
+                    ("array", ("mask_shl", ":size", ":off", ":int:shl", ":idx"), ":loc"),
+                )
+            ) and 0 <= m.shl < 256:  # an element size (a power of two) within a word
                 size, off, shl, idx, loc = m.size, m.off, m.shl, m.idx, m.loc
                 r = 2**shl
                 e_loc = get_loc(loc)

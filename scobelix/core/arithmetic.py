@@ -29,7 +29,9 @@ UINT_256_MAX = 2**256 - 1
 
 
 def to_real_int(exp):
-    if type(exp) == int and get_bit(exp, 255):
+    # a word with its top bit set as a negative int; an int wider than a
+    # word is a byte string (copied code), never a two's complement
+    if type(exp) == int and 0 <= exp < UINT_256_CEILING and get_bit(exp, 255):
         return -sub(0, exp)
     else:
         return exp
@@ -119,7 +121,8 @@ def is_zero(exp):
             res.append(is_zero(r))
         return and_op(*res)
 
-    if opcode(exp) == "and":
+    if opcode(exp) == "and" and all(is_boolean(r) for r in exp[1:]):
+        # !(a & b) == !a | !b holds for 0/1 values only (1 & 2 == 0)
         res = []
         for r in exp[1:]:
             res.append(is_zero(r))
@@ -152,7 +155,36 @@ def is_zero(exp):
     return ("iszero", exp)
 
 
+BOOLEAN_OPS = ("lt", "gt", "le", "ge", "slt", "sgt", "sle", "sge", "eq", "iszero", "bool")
+
+
+def is_boolean(exp):
+    """True when `exp` is known to be 0 or 1."""
+    if isinstance(exp, bool):
+        return True
+    if type(exp) == int:
+        return exp in (0, 1)
+    if opcode(exp) in BOOLEAN_OPS:
+        return True
+    if opcode(exp) in ("and", "or"):
+        return all(is_boolean(e) for e in exp[1:])
+    if opcode(exp) == "mask_shl" and exp[1:4] == (1, 0, 0):
+        return True
+    return False
+
+
 def eval_bool(exp, known_true=True, symbolic=True):
+    """
+    True / False when the condition `exp` (a word: true iff non-zero) is
+    known to hold / not to hold, assuming `known_true` holds; None otherwise.
+    Ints are EVM words (negative ones are two's complement).
+    """
+    if isinstance(exp, bool):
+        return exp
+
+    if type(exp) == int:
+        return exp % UINT_256_CEILING != 0
+
     if exp == known_true:
         return True
 
@@ -161,12 +193,6 @@ def eval_bool(exp, known_true=True, symbolic=True):
 
     if exp == is_zero(known_true):
         return False
-
-    if type(exp) == int:
-        return exp > 0
-
-    if exp in (True, False):
-        return True
 
     if opcode(exp) == "bool":
         return eval_bool(exp[1], known_true=known_true, symbolic=symbolic)
@@ -188,8 +214,11 @@ def eval_bool(exp, known_true=True, symbolic=True):
         #'ge', 'gt', 'eq' - tbd
     if opcode(exp) in ["le", "lt"] and opcode(exp) == opcode(known_true):
         if exp[1] == known_true[1]:
-            # ('le', x, sth) while ('le', x, sth2) is known to be true
-            if eval_bool((opcode(exp), known_true[2], exp[2])) is True:
+            # ('le', x, sth) while ('le', x, sth2) is known to be true:
+            # x <= sth2 <= sth. Only concrete bounds are compared: the
+            # symbolic comparisons of algebra are not modular (n < n + 1
+            # fails for n = 2**256 - 1).
+            if eval_bool((opcode(exp), known_true[2], exp[2]), symbolic=False) is True:
                 return True
 
     if not symbolic:
@@ -287,11 +316,11 @@ def eval_bool(exp, known_true=True, symbolic=True):
     return None
 
 
-def add(left, right):
-    return (left + right) & UINT_256_MAX
+def add(*args):
+    return sum(args) & UINT_256_MAX
 
 
-def addmod(left, right, mode):
+def addmod(left, right, mod):
     if mod == 0:
         return 0
     else:
@@ -326,10 +355,11 @@ def smod(value, mod):
     return (abs(value) % abs(mod) * pos_or_neg) & UINT_256_MAX
 
 
-def mul(left, right):
-    if left == 0 or right == 0:
-        return 0
-    return (left * right) & UINT_256_MAX
+def mul(*args):
+    res = 1
+    for a in args:
+        res = (res * a) & UINT_256_MAX
+    return res
 
 
 def mulmod(left, right, mod):
@@ -361,7 +391,7 @@ def sdiv(numerator, denominator):
     if denominator == 0:
         return 0
 
-    return pos_or_neg * (abs(numerator) // abs(denominator))
+    return (pos_or_neg * (abs(numerator) // abs(denominator))) & UINT_256_MAX
 
 
 def exp(base, exponent):
@@ -403,17 +433,23 @@ def sar(shift_length, value):
     value = unsigned_to_signed(value)
 
     if shift_length >= 256:
-        return 0 if value >= 0 else UINT_255_NEGATIVE_ONE
+        return 0 if value >= 0 else UINT_256_MAX
     else:
         return (value >> shift_length) & UINT_256_MAX
 
 
-def or_op(left, right=0):
-    return left | right
+def or_op(*args):
+    res = 0
+    for a in args:
+        res |= a
+    return res
 
 
-def xor(left, right):
-    return left ^ right
+def xor(*args):
+    res = 0
+    for a in args:
+        res ^= a
+    return res
 
 
 def byte_op(position, value):
@@ -463,6 +499,8 @@ def eq(left, right):
 
 
 def eval(exp):
+    """Folds the EVM operations of `exp` whose operands are all ints (taken
+    modulo 2**256: a negative int is a two's complement word)."""
     exp = copy(exp)
 
     if type(exp) != tuple:
@@ -476,11 +514,24 @@ def eval(exp):
         if type(p) != int:
             return exp
 
-    if exp[0] in OPCODES:
-        return OPCODES[exp[0]](*exp[1:])
+    if exp[0] in OPCODES and len(exp) - 1 in OPCODE_ARITY[exp[0]]:
+        return OPCODES[exp[0]](*(p & UINT_256_MAX for p in exp[1:]))
 
     return exp
 
+
+# number of operands each folded operation accepts (n-ary ones: add, mul,
+# and, or, xor, as the simplifier flattens them)
+_NARY = range(2, 1 << 16)
+OPCODE_ARITY = {
+    op: (_NARY if op in ("add", "mul", "and", "or", "xor") else (1,) if op == "not" else
+         (3,) if op in ("addmod", "mulmod") else (2,))
+    for op in (
+        "add", "addmod", "sub", "mod", "smod", "mul", "mulmod", "div", "sdiv", "exp",
+        "signextend", "shl", "shr", "sar", "and", "or", "xor", "not", "byte", "eq", "lt",
+        "le", "gt", "sgt", "slt", "ge", "sge", "sle",
+    )
+}
 
 OPCODES = {
     "add": add,

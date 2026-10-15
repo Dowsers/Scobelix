@@ -85,7 +85,12 @@ logger = logging.getLogger(__name__)
 """
 
 
-def make_whiles(trace, timeout=0):
+def make_whiles(trace, timeout=0, display=False, deadline=None):
+    """
+    The structured, simplified trace. display: return (trace, display_trace)
+    instead, the second one for the text output; timeout, deadline: the time
+    limits of the simplification (see simplify_trace).
+    """
     trace = make(trace)
     explain("Loops -> whiles", trace)
 
@@ -93,9 +98,7 @@ def make_whiles(trace, timeout=0):
     trace = rewrite_trace(
         trace, lambda line: [] if opcode(line) == "jumpdest" else [line]
     )
-    trace = simplify_trace(trace, timeout=timeout)
-
-    return trace
+    return simplify_trace(trace, timeout=timeout, display=display, deadline=deadline)
 
 
 """
@@ -134,8 +137,7 @@ def make(trace):
             inside = make(inside)
             remaining = make(remaining)
 
-            for _, v_idx, v_val in vars:
-                before = replace(before, ("var", v_idx), v_val)
+            before = replace_vars(before, vars)
 
             before = make(before)
 
@@ -155,6 +157,25 @@ def make(trace):
 
 
 
+def replace_vars(trace, setvars):
+    """`trace` with every variable of `setvars` (("setvar", idx, value)...)
+    replaced by its value, simultaneously: a value that names another of
+    the variables keeps meaning the old one."""
+    values = {sv[1]: sv[2] for sv in setvars}
+    if not values:
+        return trace
+
+    def sub(e):
+        if type(e) == tuple and len(e) == 2 and e[0] == "var":
+            if type(e[1]) in (int, str) and e[1] in values:
+                return values[e[1]]
+        if type(e) in (tuple, list):
+            return type(e)(sub(x) for x in e)
+        return e
+
+    return sub(trace)
+
+
 def get_jds(line):
     if m := match(line, ("goto", ":jd", ...)):
         return [m.jd]
@@ -162,11 +183,13 @@ def get_jds(line):
 
 
 def is_revert(trace):
-    if len(trace) > 1:
+    """True for a branch that only reverts (or hits INVALID). A `return`
+    never is one: `("return", 0)` returns one zero word, `("return", None)`
+    nothing (a void function under via-IR)."""
+    if len(trace) != 1:
         return False
 
-    line = trace[0]
-    return (line == ("return", 0)) or (opcode(line) in ("revert", "invalid"))
+    return opcode(trace[0]) in ("revert", "invalid")
 
 
 def to_while(trace, jd, path=None):
@@ -180,12 +203,14 @@ def to_while(trace, jd, path=None):
         if m := match(line, ("if", ":cond", ":if_true", ":if_false")):
             cond, if_true, if_false = m.cond, m.if_true, m.if_false
 
+            # ("require", C, LINE): when C is false, LINE runs (the revert
+            # or invalid line of the branch, payload included)
             if is_revert(if_true):
-                path.append(("require", is_zero(cond)))
+                path.append(("require", is_zero(cond), if_true[0]))
                 trace = if_false
                 continue
             if is_revert(if_false):
-                path.append(("require", cond))
+                path.append(("require", cond, if_false[0]))
                 trace = if_true
                 continue
 
@@ -199,10 +224,9 @@ def to_while(trace, jd, path=None):
 
             def add_path(line):
                 if m := match(line, ("goto", Any, ":svs")):
-                    path2 = path
-                    for _, v_idx, v_val in m.svs:
-                        path2 = replace(path2, ("var", v_idx), v_val)
-
+                    # the loop header runs again with the new values: all
+                    # the setvars of a goto at once (a, b = b, a + b)
+                    path2 = replace_vars(path, m.svs)
                     return path2 + [line]
                 else:
                     return [line]

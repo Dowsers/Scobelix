@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 """
 
 
+class StackUnderflow(Exception):
+    """An instruction needs more stack items than the VM has: the run
+    started from an incomplete stack (see VM._run)."""
+
+
 def fold_stacks(self, latter, depth):
     """
 
@@ -45,10 +50,9 @@ def fold_stacks(self, latter, depth):
 
 class Stack(EasyCopy):
     def __init__(self, val=None):
-        if type(val) == tuple:
-            val = list(val)
-
-        self.stack = val or []
+        # Always a copy: a label node's stack is a list (fold_stacks) that
+        # must not change when the VM runs from it.
+        self.stack = list(val) if val else []
 
     def __str__(self):
         return (
@@ -74,17 +78,23 @@ class Stack(EasyCopy):
         self.stack.append(self.simplify(el))
 
     def pop(self):
+        if not self.stack:
+            raise StackUnderflow()
         return self.stack.pop()
 
     def len(self):
         return len(self.stack)
 
     def swap(self, idx):
+        if len(self.stack) < idx + 1:
+            raise StackUnderflow()
         pos = -1 * idx - 1
         self.stack[-1], self.stack[pos] = self.stack[pos], self.stack[-1]
 
     def dup(self, idx):
         assert idx > 0
+        if len(self.stack) < idx:
+            raise StackUnderflow()
         self.stack.append(self.stack[-idx])
 
     def folded_with(self, latter, loader_jds, depth):

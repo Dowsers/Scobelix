@@ -1,9 +1,11 @@
 import logging
+import math
 import os
 import time
 import sys
 from copy import copy
 
+from scobelix.call_output import output_write
 from scobelix.core import arithmetic
 import scobelix.utils.opcode_dict as opcode_dict
 from scobelix.core.algebra import (
@@ -11,26 +13,27 @@ from scobelix.core.algebra import (
     bits,
     lt_op,
     mask_op,
-    minus_op,
     mul_op,
     or_op,
+    safe_le_op,
     sub_op,
-    to_bytes,
     CannotCompare,
 )
 from scobelix.core.arithmetic import is_zero, simplify_bool
+from scobelix.dispatcher import selector_test
 from scobelix.matcher import match
 from scobelix.prettify import pprint_trace
 from scobelix.utils.helpers import (
     C,
     EasyCopy,
     all_concrete,
+    allow_int_digits,
     opcode,
     precompiled,
     precompiled_var_names,
 )
 
-from .stack import Stack, fold_stacks
+from .stack import Stack, StackUnderflow, fold_stacks
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,19 @@ def mem_load(pos, size=32):
     return ("mem", ("range", pos, size))
 
 
+def call_payload(arg_start, arg_len):
+    """
+    (fname, fparams) fields of a call node. The payload is kept whole as one
+    memory range: fname is None and fparams is the payload (None when it is
+    empty), whatever its length; the selector, when there is one, is the
+    first 4 bytes of fparams once memory is resolved (the text printer shows
+    it as the function name).
+    """
+    if arg_len == 0:
+        return None, None
+    return None, mem_load(arg_start, arg_len)
+
+
 def find_nodes(node, f):
     """Recursively find nodes where f(node) returns true."""
     assert type(node) == Node
@@ -72,8 +88,38 @@ def find_nodes(node, f):
     return res
 
 
+def loop_var_depth(node, depth):
+    """
+    The `depth` part of the variable ids (stack position from the top +
+    depth * 1000, see fold_stacks) of the loop that `node` jumps back to.
+
+    The exploration depth alone does not make the ids unique: an inner loop
+    whose back-edge sits at the depth where the enclosing loop's did gets
+    the same ids, and the inner loop's variable then overwrites the outer
+    one (the loop counter read after the inner loop is the inner pointer).
+    So the depth part of every other loop label on the path to `node`
+    (enclosing loops, and earlier ones whose variables the code after them
+    may still read) is skipped.
+    """
+    used = set()
+    for jd, label in node.label_history.items():
+        if jd == node.jd:
+            continue  # this loop's own label (a widening)
+        for v in getattr(label, "begin_vars", None) or ():
+            used.add(v[1] // 1000)
+    while depth in used:
+        depth += 1
+    return depth
+
+
 MAX_NODE_COUNT = int(os.environ.get("PANORAMIX_MAX_NODE_COUNT", "500000"))
 node_count = 0
+
+# CODECOPY of a constant range up to this many bytes gives the copied value
+# itself; longer or symbolic copies stay ("code.data", offset, length)
+MAX_CONCRETE_CODECOPY = 1 << 16
+# such a value as decimal text (str, json): 8 * 2**16 bits, 157 827 digits
+allow_int_digits(int(8 * MAX_CONCRETE_CODECOPY * math.log10(2)) + 2)
 
 
 class Node:
@@ -104,21 +150,24 @@ class Node:
 
         self.condition = condition
 
+        # Stack on entry, kept for the dispatcher analysis (see make_trace):
+        # set_label() later replaces self.stack with the folded loop stack.
+        self.entry_stack = tuple(stack) if vm.just_fdests else None
+
         stack_obj = Stack(stack)
         self.jd = (start, len(stack), tuple(stack_obj.jump_dests(vm.loader.jump_dests)))
 
     def make_trace(self):
-        if self.trace is None:
-            return [("undefined", "decompilation didn't finish")]
-
-        if self.vm.just_fdests and self.trace != [("revert", 0)]:
-            t = self.trace[0]
-            if match(t, ("jump", ":target_node", ...)):
-                begin = [("jd", str(self.jd[0]))]  # , str(self.trace))]
-            else:
-                begin = ["?"]
+        if self.vm.just_fdests:
+            # Every node of the dispatcher run starts with a marker telling
+            # where it starts and with which stack: the dispatcher analysis
+            # decompiles the default exits (fallback, receive) from there.
+            begin = [("jd", self.start, self.entry_stack)]
         else:
             begin = []
+
+        if self.trace is None:
+            return begin + [("undefined", "decompilation didn't finish")]
 
         if self.is_label():
             begin_vars = []
@@ -203,7 +252,12 @@ class VM(EasyCopy):
         node_count = 0
 
 
-    def run(self, start, history={}, condition=None, re_run=False, stack=(), timeout=0):
+    def run(
+        self, start, history={}, condition=None, re_run=False, stack=(), timeout=0, memory=None
+    ):
+        """memory: setmem lines describing memory at `start` (the writes the
+        dispatcher made on the way to a function); Loader.memory_seed when
+        None."""
         time_start = time.monotonic()
         last_progress = time_start
 
@@ -213,8 +267,8 @@ class VM(EasyCopy):
             return timeout and (time.monotonic() - time_start > timeout)
 
         func_node = Node(vm=self, start=start, safe=True, stack=list(stack))
-        trace = [
-            ("setmem", ("range", 0x40, 32), 0x60),
+        seed = list(memory) if memory is not None else self.loader.memory_seed(start)
+        trace = seed + [
             ("jump", func_node, "safe", tuple()),
         ]
 
@@ -292,31 +346,11 @@ class VM(EasyCopy):
             node.run()
 
     def replace_loops(self, root):
-        # KNOWN LIMITATION (see tests/test_golden_fixtures.py::
-        # test_loop_accumulator_value_is_tracked, xfail): a loop-carried
-        # accumulator that isn't the loop's own condition variable (e.g.
-        # `total += i` alongside a `for (i=0; i<n; i++)` counter) is
-        # frequently NOT detected as a loop variable here, even though
-        # fold_stacks() below compares the *entire* stack and would flag it
-        # if it differed at this exact point. Root-caused (2026, diagnostic
-        # session) by instrumenting fold_stacks() on both optimizer-on and
-        # optimizer-off bytecode for a minimal `total += i` loop: the
-        # counter slot (`i`) is reliably flagged as changed on the very
-        # first jd revisit, but the accumulator slot (`total`) compares
-        # equal at that same point even though it demonstrably changes
-        # over the full loop - meaning the cycle in `node.history` that
-        # triggers this comparison is detected on a traversal path that
-        # hasn't yet executed the accumulator's update, not that the
-        # comparison itself is wrong. Understanding *why* the BFS
-        # exploration order (see VM.run()'s node queue) reaches that jd a
-        # second time before covering the accumulator's update - across
-        # both a solc-optimized shared "checked add" subroutine call and
-        # plain unoptimized inlined code, so it isn't just a subroutine-
-        # sharing artifact - needs deeper study of the history/depth
-        # mechanism than is safe to patch speculatively: this same
-        # fold_stacks()/jd-history pair is what every loop in every
-        # contract relies on, so a wrong fix here has very wide, silent
-        # blast radius. Left as documented debt rather than papered over.
+        # A jump back to a jumpdest of the path (same stack length) is a
+        # loop: the stack positions that differ become loop variables. A
+        # position equal on this first back-edge but not on a later one (an
+        # accumulator that the first iteration leaves unchanged) is added by
+        # the widening in continue_loops.
         nodes = find_nodes(root, lambda n: n.trace is None)
 
         for node in nodes:
@@ -326,7 +360,7 @@ class VM(EasyCopy):
                 and len(node.history[node.jd].stack) == len(node.stack)
             ):  # jd[1] == stack_len
                 folded, vars = fold_stacks(
-                    node.history[node.jd].stack, node.stack, node.depth
+                    node.history[node.jd].stack, node.stack, loop_var_depth(node, node.depth)
                 )
                 loop_line = (
                     "loop",
@@ -345,7 +379,20 @@ class VM(EasyCopy):
             and opcode(n.trace[0]) == "loop",
         )
 
+        # nodes of a subtree discarded by a widening below
+        dead = set()
+
+        def mark_dead(n):
+            todo = [n]
+            while todo:
+                x = todo.pop()
+                if id(x) not in dead:
+                    dead.add(id(x))
+                    todo.extend(x.next)
+
         for node in loop_list:
+            if id(node) in dead:
+                continue
             (line,) = node.trace
             op, loop_dest, stack, new_stack, vars = line
             assert op == "loop"
@@ -353,6 +400,35 @@ class VM(EasyCopy):
             if loop_dest.is_label():
                 old_stack = loop_dest.stack
                 beginvars = loop_dest.label.begin_vars
+
+                # Widening: a position where this back-edge brings another
+                # value than the label's stack, and that is not a loop
+                # variable yet, is loop-carried too (e.g. an accumulator
+                # that a first iteration left unchanged, 0 + 0). It becomes
+                # a variable and the loop body runs again from the label.
+                # This terminates: the variables of a label only grow.
+                covered = {pos for (_, _, _, pos) in beginvars}
+                extra = [
+                    p
+                    for p in range(len(old_stack))
+                    if p not in covered and old_stack[p] != stack[p]
+                ]
+                if beginvars and extra:
+                    depth_part = beginvars[0][1] // 1000
+                    widened_vars = list(beginvars)
+                    widened = list(old_stack)
+                    for p in extra:
+                        var_idx = len(old_stack) - p + depth_part * 1000
+                        widened_vars.append(("var", var_idx, old_stack[p], p))
+                        widened[p] = ("var", var_idx)
+                    loop_dest.label.begin_vars = tuple(widened_vars)
+                    for child in loop_dest.next:
+                        mark_dead(child)
+                    loop_dest.stack = widened
+                    loop_dest.trace = None
+                    loop_dest.next = []
+                    continue
+
                 set_vars = []
 
                 for _, var_idx, val, stack_pos in beginvars:
@@ -361,7 +437,7 @@ class VM(EasyCopy):
 
                 if not set_vars:
                     folded, var_list = fold_stacks(
-                        old_stack, stack, loop_dest.label.depth
+                        old_stack, stack, loop_var_depth(node, loop_dest.label.depth)
                     )
                     node.trace = None
                     node.set_label(loop_dest, tuple(var_list), folded)
@@ -387,6 +463,10 @@ class VM(EasyCopy):
         if i not in lines:
             if type(i) != int:
                 return [("undefined", "jump to a parameter computed at runtime", i)]
+            elif safe:
+                return [self._past_code(i)]
+            elif i in self.loader.trailer_jump_dests:
+                return [("undefined", "jump into the metadata trailer", i)]
             else:
                 return [("invalid", "jumdest", i)]
 
@@ -394,7 +474,7 @@ class VM(EasyCopy):
             if lines[i][1] == "jumpdest":
                 i = self.loader.next_line(i)
                 if i not in lines:
-                    return [("invalid", "eof?")]
+                    return [self._past_code(i)]
             else:
                 return [("invalid", "jump")]
 
@@ -402,33 +482,49 @@ class VM(EasyCopy):
             try:
                 line = lines[i]
             except KeyError:
-                trace.append(("invalid", "jumpdest"))
+                trace.append(self._past_code(i))
                 return trace
 
-            res = self.handle_jumps(trace, line, condition)
-            if res is not None:
-                return res
+            try:
+                res = self.handle_jumps(trace, line, condition)
+                if res is not None:
+                    return res
 
-            if line[1] == "jumpdest":
-                n = Node(
-                    self,
-                    start=i,
-                    safe=False,
-                    stack=tuple(self.stack.stack),
-                    condition=condition,
-                )
-                logger.debug("jumpdest %s", n)
-                trace.append(("jump", n))
+                if line[1] == "jumpdest":
+                    n = Node(
+                        self,
+                        start=i,
+                        safe=False,
+                        stack=tuple(self.stack.stack),
+                        condition=condition,
+                    )
+                    logger.debug("jumpdest %s", n)
+                    trace.append(("jump", n))
+                    return trace
+
+                stop = self.apply_stack(trace, line)
+            except StackUnderflow:
+                # The VM ran out of stack items: the entry stack of this
+                # run is incomplete, which says nothing about the bytecode.
+                stop = ("undefined", "stack underflow", i)
+
+            if stop is not None:
+                # never continue past an instruction the VM could not model
+                trace.append(stop)
                 return trace
-
-            else:
-                self.apply_stack(trace, line)
-
 
             i = self.loader.next_line(i)
-        logger.error()
-        #assert False
 
+
+    def _past_code(self, i):
+        """Trace line for execution reaching pc `i` without a jump where the
+        disassembly has no instruction: past the end of the code the EVM
+        stops; in the metadata trailer it would run the trailer bytes."""
+        if self.loader.runs_into_trailer(i):
+            return ("undefined", "execution runs into the metadata trailer", i)
+        if type(i) == int and i >= len(self.loader.binary):
+            return ("stop",)
+        return ("invalid", "jumpdest")
 
     def handle_jumps(self, trace, line, condition):
         i, op = line[0], line[1]
@@ -496,12 +592,30 @@ class VM(EasyCopy):
                 condition=is_zero(if_condition),
             )
 
+            if self.just_fdests:
+                # A selector comparison: cut the function out of the
+                # dispatcher run, it is decompiled on its own afterwards.
+                sel = selector_test(if_condition)
+                if sel is not None:
+                    fx_hash, in_true_branch = sel
+                    if in_true_branch:
+                        jumpdest = self.lines.get(target, (None, None))[1] == "jumpdest"
+                        if type(target) == int and jumpdest:
+                            n_true.trace = [("funccall", fx_hash, target, tuple_stack)]
+                    elif n_false.start is not None:
+                        # via-IR: the function body follows the jumpi
+                        n_false.trace = [
+                            ("funccall", fx_hash, n_false.start, tuple_stack)
+                        ]
+
             bool_condition = arithmetic.eval_bool(if_condition, condition, symbolic=False)
             if bool_condition is not None:
                 trace.append(("jump", n_true if bool_condition else n_false))
                 return trace
 
-            # protocol-safe pruning
+            # protocol-safe pruning: past 60% of the node budget the false
+            # branch of a symbolic jumpi is not explored any more. It is
+            # reported as such, never as a plain `stop` (a successful end).
             if self.protocol_safe and node_count > int(MAX_NODE_COUNT * 0.6):
                 pruned_false = Node(
                     self,
@@ -509,7 +623,7 @@ class VM(EasyCopy):
                     safe=True,
                     stack=tuple_stack,
                     condition=is_zero(if_condition),
-                    trace=[("stop",)]
+                    trace=[("undefined", "branch pruned")],
                 )
                 trace.append(("if", if_condition, n_true, pruned_false))
                 return trace
@@ -523,7 +637,8 @@ class VM(EasyCopy):
             n = stack.pop()
 
             if n == 0:
-                trace.append((op, 0))
+                # empty return / revert data; (op, 0) is one zero word
+                trace.append((op, None))
             else:
                 return_data = mem_load(p, n)
                 trace.append((op, return_data))
@@ -546,12 +661,25 @@ class VM(EasyCopy):
 
 
 
+    def snapshot(self, trace, value):
+        """Binds a read of mutable state (storage, balance, a call result...)
+        to a fresh variable at the line where it happens: `("setvar", "_N",
+        value)`, and returns `("var", "_N")` for the stack. The simplifier
+        moves the value to its uses only where nothing changed it in between
+        (core/effects.py), so a value read before a write or a call is never
+        mistaken for the one read after it."""
+        self.counter += 1
+        vname = f"_{self.counter}"
+        trace(("setvar", vname, value))
+        return ("var", vname)
+
     def apply_stack(self, ret, line):
         def trace(exp, *format_args):
-            try:
-                logger.debug("Trace: %s", str(exp).format(*format_args))
-            except Exception:
-                pass
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    logger.debug("Trace: %s", str(exp).format(*format_args))
+                except Exception:
+                    pass
 
             if type(exp) == str:
                 ret.append(exp.format(*format_args))
@@ -559,6 +687,9 @@ class VM(EasyCopy):
                 ret.append(exp)
 
         stack = self.stack
+
+        def snapshot(value):
+            return self.snapshot(trace, value)
 
         op = line[1]
 
@@ -640,13 +771,17 @@ class VM(EasyCopy):
                 stack.append(sub_op(left, right))
 
         elif op in ["mulmod", "addmod"]:
-            stack.append(("mulmod", stack.pop(), stack.pop(), stack.pop()))
+            # (op, a, b, N): a + b (or a * b) modulo N, 0 when N == 0;
+            # concrete operands are folded by Stack.simplify
+            stack.append((op, stack.pop(), stack.pop(), stack.pop()))
 
         elif op == "shl":
             off = stack.pop()
             exp = stack.pop()
             if all_concrete(off, exp):
-                stack.append(exp << off)
+                stack.append(arithmetic.shl(off, exp))
+            elif type(off) == int and off >= 256:
+                stack.append(0)
             else:
                 stack.append(mask_op(exp, shl=off))
 
@@ -654,28 +789,27 @@ class VM(EasyCopy):
             off = stack.pop()
             exp = stack.pop()
             if all_concrete(off, exp):
-                stack.append(exp >> off)
+                stack.append(arithmetic.shr(off, exp))
+            elif type(off) == int:
+                # x >> k keeps bits [k, 256) and moves them down: the same
+                # mask as div(x, 2**k)
+                if off >= 256:
+                    stack.append(0)
+                elif off == 0:
+                    stack.append(exp)
+                else:
+                    stack.append(mask_op(exp, size=256 - off, offset=off, shr=off))
             else:
-                stack.append(mask_op(exp, offset=minus_op(off), shr=off))
+                stack.append(("shr", off, exp))
 
         elif op == "sar":
             off = stack.pop()
             exp = stack.pop()
             if all_concrete(off, exp):
-                sign = exp & (1 << 255)
-                if off >= 256:
-                    if sign:
-                        stack.append(2**256 - 1)
-                    else:
-                        stack.append(0)
-                else:
-                    shifted = exp >> off
-                    if sign:
-                        shifted |= (2**256 - 1) << (256 - off)
-                    stack.append(shifted)
+                stack.append(arithmetic.sar(off, exp))
             else:
-                # FIXME: This won't give the right result...
-                stack.append(mask_op(exp, offset=minus_op(off), shr=off))
+                # arithmetic shift: sign bits come in, no mask expresses it
+                stack.append(("sar", off, exp))
 
         elif op in ["not", "iszero"]:
             stack.append((op, stack.pop()))
@@ -704,18 +838,22 @@ class VM(EasyCopy):
             )
 
         elif op == "byte":
-            val = stack.pop()
+            # BYTE(i, x): byte i of x, counted from the most significant one
             num = stack.pop()
-            off = sub_op(256, to_bytes(num))
-            stack.append(mask_op(val, 8, off, shr=off))
+            val = stack.pop()
+            if all_concrete(num, val):
+                stack.append(arithmetic.byte_op(num, val))
+            elif type(num) == int:
+                if num >= 32:
+                    stack.append(0)
+                else:
+                    off = 248 - 8 * num
+                    stack.append(mask_op(val, size=8, offset=off, shr=off))
+            else:
+                stack.append(("byte", num, val))
 
         elif op == "selfbalance":
-            stack.append(
-                (
-                    "balance",
-                    "address",
-                )
-            )
+            stack.append(snapshot(("balance", "address")))
 
         elif op == "prevrandao":
             stack.append("prevrandao")
@@ -732,12 +870,7 @@ class VM(EasyCopy):
             )
 
         elif op == "tload":
-            stack.append(
-                (
-                    "tload",
-                    stack.pop(),
-                )
-            )
+            stack.append(snapshot(("tload", stack.pop())))
 
         elif op == "tstore":
             tloc = stack.pop()
@@ -759,20 +892,9 @@ class VM(EasyCopy):
 
         elif op == "balance":
             addr = stack.pop()
-            if addr[:4] == ("mask_shl", 160, 0, 0):
-                stack.append(
-                    (
-                        "balance",
-                        addr[4],
-                    )
-                )
-            else:
-                stack.append(
-                    (
-                        "balance",
-                        addr,
-                    )
-                )
+            if type(addr) == tuple and addr[:4] == ("mask_shl", 160, 0, 0):
+                addr = addr[4]
+            stack.append(snapshot(("balance", addr)))
 
         elif op.startswith("swap"):
             # swap1..swap16
@@ -801,7 +923,7 @@ class VM(EasyCopy):
 
         elif op == "sload":
             sloc = stack.pop()
-            stack.append(("storage", 256, 0, sloc))
+            stack.append(snapshot(("storage", 256, 0, sloc)))
 
         elif op == "sstore":
             sloc = stack.pop()
@@ -828,14 +950,15 @@ class VM(EasyCopy):
             )
 
         elif op == "mstore8":
+            # one byte: the low byte of the value
             memloc = stack.pop()
             val = stack.pop()
 
             trace(
                 (
                     "setmem",
-                    ("range", memloc, 8),
-                    val,
+                    ("range", memloc, 1),
+                    val & 0xFF if type(val) == int else mask_op(val, size=8),
                 )
             )
 
@@ -858,21 +981,19 @@ class VM(EasyCopy):
             call_pos = stack.pop()
             data_len = stack.pop()
 
-            if (type(call_pos), type(data_len)) == (
-                int,
-                int,
-            ) and call_pos + data_len < len(self.loader.binary):
-                res = 0
-                for i in range(call_pos - 1, call_pos + data_len - 1):
-                    res = res << 8
-                    res += self.loader.binary[
-                        i
-                    ]  # this breaks with out of range for some contracts
-                    # may be because we're usually getting compiled code binary
-                    # and not runtime binary
-                trace(
-                    ("setmem", ("range", mem_pos, data_len), res)
-                )  # ('bytes', data_len, res)))
+            if data_len == 0:
+                pass  # copies nothing
+
+            elif (
+                type(call_pos) == int
+                and type(data_len) == int
+                and data_len <= MAX_CONCRETE_CODECOPY
+            ):
+                # the copied bytes, zero past the end of the code (the whole
+                # runtime, metadata trailer included); setmem gives the width
+                code = bytes(self.loader.binary[call_pos : call_pos + data_len])
+                res = int.from_bytes(code.ljust(data_len, b"\0"), "big")
+                trace(("setmem", ("range", mem_pos, data_len), res))
 
             else:
                 trace(
@@ -910,11 +1031,10 @@ class VM(EasyCopy):
                 #                return_data = mask_op(('ext_call.return_data', bits(add_op(data_len, ret_pos))), size=bits(data_len), shl=bits(ret_pos))
                 trace(("setmem", ("range", mem_pos, data_len), return_data))
 
-        elif op == "call":
-            self.handle_call(op, trace)
-
-        elif op == "staticcall":
-            self.handle_call(op, trace)
+        elif op in ("call", "staticcall"):
+            stop = self.handle_call(op, trace, line[0])
+            if stop is not None:
+                return stop
 
         elif op == "delegatecall":
             gas = stack.pop()
@@ -929,16 +1049,7 @@ class VM(EasyCopy):
             self.counter += 1
             call_id = f"delegatecall_{self.counter}"
 
-            # function selector + params
-            if arg_len == 0:
-                fname = None
-                fparams = None
-            elif arg_len == 4:
-                fname = mem_load(arg_start, 4)
-                fparams = None
-            else:
-                fname = mem_load(arg_start, 4)
-                fparams = mem_load(add_op(arg_start, 4), sub_op(arg_len, 4))
+            fname, fparams = call_payload(arg_start, arg_len)
 
             trace((
                 "delegatecall",
@@ -948,14 +1059,14 @@ class VM(EasyCopy):
                 fparams,
             ))
 
-            #symbolic success
+            # the success of this delegatecall, read now
             success_var = f"{call_id}.success"
-            stack.append(("var", success_var))
+            stack.append(snapshot(("var", success_var)))
 
-            #symbolic returndata
+            # the output buffer: min(ret_len, returndatasize) bytes of the
+            # return data (see call_output.py)
             if ret_len != 0:
-                ret_data = ("delegate.return_data", addr, ret_len)
-                trace(("setmem", ("range", ret_start, ret_len), ret_data))
+                trace(output_write(ret_start, ret_len, "delegate.return_data", addr))
 
 
 
@@ -976,29 +1087,15 @@ class VM(EasyCopy):
                 value,
             )
 
-            if arg_len == 0:
-                fname = None
-                fparams = None
-
-            elif arg_len == 4:
-                fname = mem_load(arg_start, 4)
-                fparams = 0
-
-            else:
-                fname = mem_load(arg_start, 4)
-                fparams = mem_load(add_op(arg_start, 4), sub_op(arg_len, 4))
-
-            call_trace += (fname, fparams)
+            call_trace += call_payload(arg_start, arg_len)
 
             trace(call_trace)
 
             self.call_len = ret_len
-            stack.append("callcode.return_code")
+            stack.append(snapshot("callcode.return_code"))
 
             if 0 != ret_len:
-                return_data = ("callcode.return_data", 0, ret_len)
-
-                trace(("setmem", ("range", ret_start, ret_len), return_data))
+                trace(output_write(ret_start, ret_len, "callcode.return_data"))
 
         elif op == "create":
             wei, mem_start, mem_len = stack.pop(), stack.pop(), stack.pop()
@@ -1010,7 +1107,7 @@ class VM(EasyCopy):
 
             trace(call_trace)
 
-            stack.append("create.new_address")
+            stack.append(snapshot("create.new_address"))
 
         elif op == "create2":
             wei, mem_start, mem_len, salt = (
@@ -1024,7 +1121,7 @@ class VM(EasyCopy):
 
             trace(call_trace)
 
-            stack.append("create2.new_address")
+            stack.append(snapshot("create2.new_address"))
 
         elif op == "pc":
             stack.append(line[0])
@@ -1035,13 +1132,21 @@ class VM(EasyCopy):
             trace(("setvar", vname, "msize"))
             stack.append(("var", vname))
 
-        elif op in ("extcodesize", "extcodehash", "blockhash"):
+        elif op in ("extcodesize", "extcodehash"):
+            # the code of an account changes when a call or a creation
+            # deploys or destroys it
+            stack.append(snapshot((op, stack.pop())))
+
+        elif op == "blockhash":
             stack.append(
                 (
                     op,
                     stack.pop(),
                 )
             )
+
+        elif op == "returndatasize":
+            stack.append(snapshot(op))
 
         elif op in [
             "callvalue",
@@ -1058,39 +1163,33 @@ class VM(EasyCopy):
             "coinbase",
             "gaslimit",
             "calldatasize",
-            "returndatasize",
             "basefee",
         ]:
             stack.append(op)
 
         else:
-            # TODO: Maybe raise an error directly?
-            if op not in [
-                "jump",
-                "jumpi",
-                "revert",
-                "return",
-                "stop",
-                "jumpdest",
-                "UNKNOWN",
-            ]:
-                logger.warning(f"unsupporteed opcode %s : {op}")
-                return
+            # every opcode of the disassembler has a handler above or in
+            # handle_jumps: reaching this is a VM bug, not a property of the
+            # code, and the path is not continued with a wrong stack
+            logger.warning("unsupported opcode %s at %s", op, line[0])
+            return ("undefined", f"unsupported opcode {op}", line[0])
 
-        if stack.len() - previous_len != opcode_dict.stack_diffs[op]:
-            logger.error("line: %s", line)
-            logger.error("stack: %s", stack)
-            logger.error(
-                "expected %s, got %s stack diff",
-                opcode_dict.stack_diffs[op],
+        if stack.len() - previous_len != opcode_dict.stack_diffs.get(op):
+            logger.warning(
+                "opcode %s at %s: stack effect %s, expected %s",
+                op,
+                line[0],
                 stack.len() - previous_len,
+                opcode_dict.stack_diffs.get(op),
             )
-            logger.error(f"opcode {op} not processed correctly, very the code")
-            #assert False, f"opcode {op} not processed correctly"
+            return ("undefined", f"stack effect of {op} not modelled", line[0])
 
         stack.cleanup()
+        return None
 
-    def handle_call(self, op, trace):
+    def handle_call(self, op, trace, line_pc):
+        """CALL / STATICCALL. Returns an `undefined` line when the call
+        cannot be modelled (the path stops there), None otherwise."""
         stack = self.stack
 
         gas = stack.pop()
@@ -1107,20 +1206,30 @@ class VM(EasyCopy):
         ret_len = stack.pop()
 
         if addr == 4:  # Identity
-            m = mem_load(arg_start, arg_len)
-            trace(("setmem", ("range", ret_start, arg_len), m))
+            # the output is the input; the call writes min(input, output
+            # buffer) bytes of it
+            if arg_len == ret_len or safe_le_op(arg_len, ret_len) is True:
+                n = arg_len
+            elif safe_le_op(ret_len, arg_len) is True:
+                n = ret_len
+            else:
+                return (
+                    "undefined",
+                    "identity precompile: copied length unknown",
+                    line_pc,
+                )
+            if n != 0:
+                trace(("setmem", ("range", ret_start, n), mem_load(arg_start, n)))
 
             stack.append("memcopy.success")
 
         elif type(addr) == int and addr in precompiled:
-            m = mem_load(arg_start, arg_len)
             args = mem_load(arg_start, arg_len)
             var_name = precompiled_var_names[addr]
 
             trace(("precompiled", var_name, precompiled[addr], args))
+            stack.append(self.snapshot(trace, "{}.result".format(precompiled[addr])))
             trace(("setmem", ("range", ret_start, ret_len), ("var", var_name)))
-
-            stack.append("{}.result".format(precompiled[addr]))
 
         else:
             assert op in ("call", "staticcall")
@@ -1131,28 +1240,19 @@ class VM(EasyCopy):
                 wei,
             )
 
-            if arg_len == 0:
-                call_trace += None, None
-
-            elif arg_len == 4:
-                call_trace += mem_load(arg_start, 4), None
-
-            else:
-                fname = mem_load(arg_start, 4)
-                fparams = mem_load(add_op(arg_start, 4), sub_op(arg_len, 4))
-                call_trace += fname, fparams
+            call_trace += call_payload(arg_start, arg_len)
 
             trace(call_trace)
             #           trace(('comment', mem_load(arg_start, arg_len)))
 
             self.call_len = ret_len
 
-            stack.append("ext_call.success")
+            stack.append(self.snapshot(trace, "ext_call.success"))
 
+            # the call copies min(ret_len, returndatasize) bytes of its
+            # return data to the output buffer (see call_output.py)
             try:
                 if lt_op(0, ret_len):
-                    return_data = ("ext_call.return_data", 0, ret_len)
-                    trace(("setmem", ("range", ret_start, ret_len), return_data))
+                    trace(output_write(ret_start, ret_len))
             except CannotCompare:
-                return_data = ("ext_call.return_data", 0, ret_len)
-                trace(("setmem", ("range", ret_start, ret_len), return_data))
+                trace(output_write(ret_start, ret_len))

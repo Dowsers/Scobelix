@@ -1,48 +1,18 @@
-import json
-import logging
-import lzma
-import os
-import sys
-import time
-from pathlib import Path
-from zipfile import ZipFile
+"""
+    Function signatures and the lookup entry point used by the decompiler.
+
+    LOCAL_SIGS is a hand-written table of common function selectors
+    (ERC-20/4626, lending, staking, AMM routers, proxies, diamonds), one of the
+    sources of the signature database (scobelix.utils.sigdb); its names take
+    precedence over the other sources for the same signature.
+
+    fetch_sig() returns the best database candidate for a selector, in the
+    shape of an ABI entry: {"name", "inputs": [{"type", "name"}, ...], ...}.
+"""
+
 from typing import Optional
-import shelve
-from scobelix.utils.helpers import (
-    cache_dir,
-    cached,
-)
 
-"""
-    a module for management of bytes4 signatures from the database
-
-     db schema:
-
-     hash - 0x12345678
-     name - transferFrom
-     folded_name - transferFrom(address,address,uint256)
-     cooccurs - comma-dellimeted list of hashes: `0x12312312,0xabababab...`
-     params - json: `[
-            {
-              "type": "address",
-              "name": "_from"
-            },
-            {
-              "type": "address",
-              "name": "_to"
-            },
-            {
-              "type": "uint256",
-              "name": "_value"
-            }
-          ]`
-
-"""
-
-logger = logging.getLogger(__name__)
-
-LOCAL_SIGS_BULK_PATH = Path(__file__).parent.parent / "data" / "local_sigs.json"
-LOCAL_SIGS_BULK = None
+from scobelix.utils import sigdb
 
 LOCAL_SIGS = {
     "0x06fdde03": {
@@ -362,17 +332,6 @@ LOCAL_SIGS = {
         "name": "deposit",
         "inputs": [{"type": "uint256", "name": "value"}],
     },
-    "0x6e553f65": {
-        "name": "deposit",
-        "inputs": [
-            {"type": "uint256", "name": "value"},
-            {"type": "address", "name": "addr"},
-        ],
-    },
-    "0x2e1a7d4d": {
-        "name": "withdraw",
-        "inputs": [{"type": "uint256", "name": "value"}],
-    },
     "0x38d07436": {
         "name": "withdraw",
         "inputs": [
@@ -544,7 +503,15 @@ LOCAL_SIGS = {
     "0x1f931c1c": {
         "name": "diamondCut",
         "inputs": [
-            {"type": "tuple[]", "name": "_cut"},
+            {
+                "type": "tuple[]",
+                "name": "_cut",
+                "components": [
+                    {"type": "address", "name": "facetAddress"},
+                    {"type": "uint8", "name": "action"},
+                    {"type": "bytes4[]", "name": "functionSelectors"},
+                ],
+            },
             {"type": "address", "name": "_init"},
             {"type": "bytes", "name": "_calldata"},
         ],
@@ -727,58 +694,21 @@ LOCAL_SIGS = {
 }
 
 
-def abi_path():
-    return cache_dir() / "abi_db.shelve"
+def fetch_sig(hash, kind=sigdb.FUNCTION) -> Optional[dict]:
+    """Best candidate for a selector, or None.
 
-
-def check_supplements():
-    if not abi_path().is_file():
-        compressed_supplements = Path(__file__).parent.parent / "data" / "abi_dump.xz"
-        logger.info("Loading %s into %s...", compressed_supplements, abi_path())
-        with lzma.open(compressed_supplements) as inf, shelve.open(
-            str(abi_path())
-        ) as out:
-            for line in inf:
-                line = json.loads(line)
-                selector, abi = line["selector"], line["abi"]
-                out[selector] = abi
-
-        assert abi_path().is_file()
-
-        logger.info("%s is ready.", abi_path())
-
-
-@cached
-def fetch_sig(hash) -> Optional[dict]:
-    check_supplements()
-
-    if type(hash) == str:
-        hash = int(hash, 16)
-    hash = "{:#010x}".format(hash)
-    if hash in LOCAL_SIGS:
-        return LOCAL_SIGS[hash]
-
-    with shelve.open(str(abi_path())) as s:
-        res = s.get(hash)
-        if res:
-            return res
-
-    load_local_sigs_bulk()
-    if hash in LOCAL_SIGS_BULK:
-        return LOCAL_SIGS_BULK[hash]
-
-    return None
-def load_local_sigs_bulk():
-    global LOCAL_SIGS_BULK
-    if LOCAL_SIGS_BULK is not None:
-        return
+    `hash` is an int or a hex string. `kind` selects the namespace: function
+    and error selectors are 4 bytes, event topics 32 bytes. The result is a
+    fresh dict (see scobelix.utils.sigdb for its keys); placeholder entries
+    never match and the name always hashes to the queried key.
+    """
+    lookup = {
+        sigdb.FUNCTION: sigdb.lookup_function,
+        sigdb.EVENT: sigdb.lookup_event,
+        sigdb.ERROR: sigdb.lookup_error,
+    }[kind]
     try:
-        if LOCAL_SIGS_BULK_PATH.is_file():
-            LOCAL_SIGS_BULK = json.loads(
-                LOCAL_SIGS_BULK_PATH.read_text(encoding="utf-8")
-            )
-        else:
-            LOCAL_SIGS_BULK = {}
-    except Exception:
-        logger.exception("Failed to load local_sigs.json")
-        LOCAL_SIGS_BULK = {}
+        candidates = lookup(hash)
+    except ValueError:  # not a selector of that width
+        return None
+    return candidates[0] if candidates else None

@@ -1,3 +1,5 @@
+import itertools
+
 from scobelix.utils.helpers import is_array, opcode
 
 """
@@ -11,16 +13,24 @@ from scobelix.utils.helpers import is_array, opcode
             ('ADD', MAX_number, 0),
             ('ADD', MAX_number, MAX_number)
 
+    The variants are every combination of the candidate values of the
+    variables (their cartesian product), and each one replaces all the
+    variables at once: the result does not depend on the order in which the
+    variables are found, nor on hashing (a decompilation must not depend on
+    PYTHONHASHSEED).
+
 """
 
 
 MAX_number = 2**230 - 1
 MAX_number2 = 2**230 - 1
 
+FREE_MEMORY_POINTER = ("mem", ("range", 64, 32))
+
 
 def variants(exp):
     var = extract_variables(exp)
-    for p in possibilities(list(var)):
+    for p in possibilities(var):
         yield replace_dict(exp, p)
 
 
@@ -32,8 +42,16 @@ def variants(exp):
 
 
 def extract_variables(exp):
+    """The variables of `exp`, each once, in the order of their first
+    occurrence (a list)."""
+    found = {}
+    _collect_variables(exp, found)
+    return list(found)
+
+
+def _collect_variables(exp, found):
     if type(exp) == int:
-        return set()
+        return
 
     if opcode(exp) in (
         "var",
@@ -44,7 +62,8 @@ def extract_variables(exp):
         "sha3",
         "calldatasize",
     ) or is_array(opcode(exp)):
-        return set([exp])
+        found[exp] = True
+        return
 
     if type(exp) == str and exp in (
         "x",
@@ -58,51 +77,40 @@ def extract_variables(exp):
         "timestamp",
         "address",
     ):
-        return set([exp])
+        found[exp] = True
+        return
 
     if type(exp) == str and exp != "data" and "data" in exp:
-        return set([exp])
+        found[exp] = True
+        return
 
     if type(exp) != tuple:
-        return set([exp])
+        found[exp] = True
+        return
 
-    res = set()
     for e in exp[1:]:
-        res = res.union(extract_variables(e))
+        _collect_variables(e, found)
 
-    return res
+
+def candidate_values(var):
+    """The values a variable takes in the variants (each once)."""
+    if var == FREE_MEMORY_POINTER:
+        low = 96
+    elif var == "calldatasize":
+        low = 6  # nasty hack for `sweeper` contract, try to remove and see what happens
+    else:  # can theoretically cause bugs in other ones
+        low = 0
+    return tuple(dict.fromkeys((MAX_number, MAX_number2, low)))
 
 
 def possibilities(var):
-    if len(var) > 0:
-        current = var[0]
-        if len(var) == 1:
-            yield {current: MAX_number}
-            yield {current: MAX_number2}
-
-            if current == ("mem", ("range", 64, 32)):
-                yield {current: 96}
-            elif current == "calldatasize":
-                yield {
-                    current: 6
-                }  # nasty hack for `sweeper` contract, try to remove and see what happens
-            else:  # can theoretically cause bugs in other ones
-                yield {current: 0}
-
-        else:
-            for p in possibilities(var[1:]):
-                p[current] = MAX_number
-                yield p
-                p[current] = MAX_number2
-                yield p
-
-                if current == ("mem", ("range", 64, 32)):
-                    yield {current: 96}
-                elif current == "calldatasize":
-                    p[current] = 6
-                else:
-                    p[current] = 0
-                yield p
+    """Every assignment of candidate values to the variables `var` (a
+    sequence): the cartesian product of their candidate values."""
+    var = list(var)
+    if not var:
+        return
+    for values in itertools.product(*(candidate_values(v) for v in var)):
+        yield dict(zip(var, values))
 
 
 def replace(exp, idx, val):
@@ -116,7 +124,21 @@ def replace(exp, idx, val):
 
 
 def replace_dict(exp, dic):
-    for idx, val in dic.items():
-        exp = replace(exp, idx, val)
+    """`exp` with every occurrence of a key of `dic` replaced by its value,
+    all at once and outermost first (a variable inside another one, such as
+    a `var` in the index of a `mem`, goes with it): the result does not
+    depend on the order of `dic`."""
+    return _replace_all(exp, tuple(dic.items()))
 
-    return exp
+
+def _replace_all(exp, items):
+    # equality tests, not a dict lookup: hashing every subexpression of a
+    # large expression costs more than comparing it with the few variables
+    for idx, val in items:
+        if exp == idx:
+            return val
+
+    if type(exp) != tuple:
+        return exp
+
+    return tuple(_replace_all(e, items) for e in exp)

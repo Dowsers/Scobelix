@@ -24,6 +24,7 @@ from scobelix.utils.helpers import (
     opcode,
     cache_dir,
 )
+from scobelix.utils import sigdb
 from scobelix.utils.supplement import fetch_sig
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,9 @@ def get_param_name(cd, add_color=False, func=None):
 def get_abi_name(hash):
     a = _abi[hash]
     if "inputs" in a:
-        return "{}({})".format(a["name"], ",".join([x["type"] for x in a["inputs"]]))
+        # canonical types, as hashed into the selector: tuples written out
+        types = [sigdb.canonical_type(x) or x["type"] for x in a["inputs"]]
+        return "{}({})".format(a["name"], ",".join(types))
     else:
         return "{}(?)".format(a["name"])
 
@@ -146,8 +149,6 @@ def fix_input_names(inputs: List[dict]):
 def make_abi(hash_targets):
     global _abi
 
-    hashes = list(hash_targets.keys())
-
     result = {}
 
     for h, target in hash_targets.items():
@@ -172,3 +173,34 @@ def make_abi(hash_targets):
         result[h] = res
 
     _abi = result
+
+
+def find_sig_name(key, kind=sigdb.FUNCTION, add_color=False, num_indexed=None, typed_only=False):
+    """`name(type param, ...)` of a selector (function or error, 4 bytes) or
+    of an event topic0 (32 bytes), None when the database has no candidate.
+
+    Only meant for values in selector positions; for events, `num_indexed`
+    (topics after topic0) prefers the candidate with that many indexed
+    parameters. `typed_only` skips the candidates flagged "untyped" (for
+    errors and events: signatures of another kind with the same hash).
+    """
+    try:
+        if kind == sigdb.EVENT:
+            cands = sigdb.lookup_event(key, num_indexed) or sigdb.lookup_event(key)
+        elif kind == sigdb.ERROR:
+            cands = sigdb.lookup_error(key)
+        else:
+            cands = sigdb.lookup_function(key)
+    except ValueError:  # not a key of that width
+        return None
+    if typed_only:
+        cands = [c for c in cands if not c["untyped"]]
+    if not cands:
+        return None
+    return "{}({})".format(
+        cands[0]["name"],
+        ", ".join(
+            colorize(x["type"], COLOR_GRAY, add_color) + " " + x["name"]
+            for x in cands[0]["inputs"]
+        ),
+    )

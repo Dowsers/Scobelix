@@ -1,7 +1,7 @@
 import os
-import math
 import re
 import string
+import sys
 import logging
 from copy import copy, deepcopy
 from pathlib import Path
@@ -81,8 +81,10 @@ class C:
     def asm(s):
         return "\033[38;5;33m" + s + C.endc
 
-    every = set(
-        [header, blue, okgreen, warning, red, bold, underline, green, gray, endc]
+    every = tuple(
+        dict.fromkeys(
+            [header, blue, okgreen, warning, red, bold, underline, green, gray, endc]
+        )
     )
 
 
@@ -384,6 +386,21 @@ def walk_trace(trace, f):
     return res
 
 
+def allow_int_digits(digits):
+    """
+    Lets str() and json.dumps() convert ints of up to `digits` decimal
+    digits. Python 3.11 (and the security releases of older ones) refuses
+    more than 4300 by default, and the trace holds ints that large: code
+    copied by CODECOPY is one int. The limit is only ever raised.
+    """
+    get = getattr(sys, "get_int_max_str_digits", None)
+    if get is None:
+        return  # no limit in this Python
+    current = get()
+    if current != 0 and current < digits:
+        sys.set_int_max_str_digits(digits)
+
+
 def all_concrete(*args):
     for a in args:
         if type(a) not in (int, float):
@@ -471,9 +488,9 @@ def to_exp2(num):  # checks if num is a power of 2, and if so, returns to which 
     if num < 1:
         return None
 
-    l = math.log2(num)
-    if l.is_integer():
-        return int(l)
+    # exact: math.log2 rounds, so that 2**256 - 1 or 2**224 + 2 would pass
+    if num & (num - 1) == 0:
+        return num.bit_length() - 1
 
     return None
 
@@ -619,6 +636,7 @@ def replace_f_stop(in_exp, f):
 def cache_dir() -> Path:
     scobelix_cache_dir = Path(user_cache_dir("scobelix", "scobelix"))
     if not scobelix_cache_dir.is_dir():
-        scobelix_cache_dir.mkdir(parents=True)
+        # exist_ok: processes started together all find it missing
+        scobelix_cache_dir.mkdir(parents=True, exist_ok=True)
 
     return scobelix_cache_dir

@@ -16,6 +16,18 @@ web3 = {version = "6.0.0-beta.8", allow-prereleases = true}
 timeout_decorator = "^0.5"
 appdirs = "^1.4"
 
+# Optional EVM backends of scobelix.verify (L3 differential execution):
+# pip install "scobelix[verify]".  pyrevm 0.3.7 publishes wheels for CPython
+# 3.8-3.12 on Linux x86_64 and 3.10-3.12 on macOS / Windows only (elsewhere it
+# needs a Rust toolchain): there the extra installs py-evm alone and
+# verification runs on it.  py-evm 0.12 needs eth-typing >= 5.2 (pip resolves
+# it on 3.9-3.12).
+pyrevm = {version = "0.3.7", optional = true, markers = "python_version < '3.13' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (python_version >= '3.10' and sys_platform in 'darwin win32'))"}
+py-evm = {version = "0.12.1b1", optional = true, allow-prereleases = true}
+
+[tool.poetry.extras]
+verify = ["pyrevm", "py-evm"]
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^7"
 
@@ -32,4 +44,7 @@ testpaths = ["tests"]
 # that fails to import against modern eth_typing/setuptools - unrelated to this
 # project's own tests, so it's disabled rather than pinning web3 to a newer,
 # still-beta release just to fix plugin autoloading.
-addopts = "-p no:pytest_ethereum"
+# Long-running tests are marked `slow` and left out of the default run:
+# `pytest -m slow` runs them (also needed to select one by its node id).
+addopts = "-p no:pytest_ethereum -m 'not slow'"
+markers = ["slow: long-running test, excluded by default (run with -m slow)"]

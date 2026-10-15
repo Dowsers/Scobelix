@@ -229,7 +229,8 @@ def fold_aux(trace):
                 last_true = if_true[-1] if if_true else None
                 if (
                     if_false == [("return", 0)]
-                    or if_false == [("revert", 0)]
+                    or if_false == [("return", None)]
+                    or if_false == [("revert", None)]
                     or opcode(car(if_false)) == "invalid"
                 ):  # and\
                     if (

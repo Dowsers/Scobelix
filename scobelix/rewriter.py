@@ -76,6 +76,10 @@ from scobelix.utils.helpers import (
 """
 
 
+def _is_zero_part(exp):
+    return exp == 0 or match(exp, ("bytes", Any, 0))
+
+
 def postprocess_exp(exp):
     if opcode(exp) == "data":
         terms = exp[1:]
@@ -91,9 +95,11 @@ def postprocess_exp(exp):
                 # heuristics for cleaning up various misprocessed stuff
 
                 if (
-                    m := match(arr, ("arr", ":l", (":op", Any, ":l"), ...))
-                ) and is_array(m.op):
-                    arr = arr[:3]
+                    (m := match(arr, ("arr", ":l", (":op", Any, ":l"), ...)))
+                    and is_array(m.op)
+                    and all(_is_zero_part(t) for t in arr[3:])
+                ):
+                    arr = arr[:3]  # a slice of length l and its zero padding
 
                 elif (
                     m := match(

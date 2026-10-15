@@ -5,6 +5,7 @@ import sys
 from copy import copy
 
 import scobelix.core.arithmetic as arithmetic
+from scobelix.call_output import resolve_call_outputs
 from scobelix.core.algebra import (
     _max_op,
     add_ge_zero,
@@ -14,7 +15,6 @@ from scobelix.core.algebra import (
     bits,
     calc_max,
     div_op,
-    divisible_bytes,
     flatten_adds,
     ge_zero,
     get_sign,
@@ -36,19 +36,21 @@ from scobelix.core.algebra import (
     simplify,
     simplify_max,
     sub_op,
-    to_bytes,
     try_add,
 )
 from scobelix.core.arithmetic import is_zero, to_real_int
+from scobelix.core.effects import clobbers, kinds
 from scobelix.core.masks import get_bit, to_mask, to_neg_mask
 from scobelix.core.memloc import (
-    apply_mask_to_range,
     fill_mem,
     memloc_overwrite,
+    part_width,
     range_overlaps,
+    self_width,
     split_setmem,
     split_store,
     splits_mem,
+    with_width,
 )
 from scobelix.matcher import Any, match
 from scobelix.prettify import (
@@ -136,9 +138,64 @@ LARGE_TRACE_THRESHOLD = 2000
 MAX_SIMPLIFY_PASSES_LARGE = 20
 MAX_MEM_CLEANUP_TRACE_LEN = 2000
 
+# The time limit of the running simplify_trace (a time.monotonic() value;
+# None: no limit). Past it, the rewrites whose cost grows with the square of
+# the trace (cleanup_mems, replace_mem, cleanup_vars) leave the rest of their
+# trace as it is, and the passes stop. Every rewrite keeps the semantics, so
+# the result stays exact, only less simplified: the limit bounds the whole
+# simplification, not only the time between two passes. (replace_var always
+# runs to its end: the loop rewrites need its substitutions.)
+_deadline = None
+# whether the last simplify_trace stopped at its limit
+last_run_timed_out = False
 
-def simplify_trace(trace, timeout=0):
-    time_start = time.monotonic()
+
+def _out_of_time():
+    global last_run_timed_out
+    if _deadline is not None and time.monotonic() > _deadline:
+        last_run_timed_out = True
+        return True
+    return False
+
+
+def simplify_trace(trace, timeout=0, display=False, deadline=None):
+    """
+    The simplified `trace`, with the same semantics. `timeout` (seconds, 0:
+    none) and `deadline` (a time.monotonic() value, None: none) bound the
+    simplification (see _deadline); last_run_timed_out tells whether it
+    stopped there. See _simplify_trace.
+    """
+    global _deadline, last_run_timed_out
+    outer = _deadline
+    start = time.monotonic()
+    limits = [t for t in (outer, deadline) if t is not None]
+    if timeout:
+        limits.append(start + timeout)
+    _deadline = min(limits) if limits else None
+    seconds = None if _deadline is None else round(_deadline - start)
+    last_run_timed_out = False
+    try:
+        res = _simplify_trace(trace, display=display)
+    finally:
+        _deadline = outer
+    if last_run_timed_out:
+        logger.warning(
+            "simplification stopped at its time limit (%s s): the trace is exact but not fully simplified",
+            seconds,
+        )
+    return res
+
+
+def _simplify_trace(trace, display=False):
+    """
+    The simplified `trace`, with the same semantics.
+
+    display: also return the form for the text output, as a pair (trace,
+    display_trace). The display form goes through the readability heuristics
+    of rewriter.py too (string length cases and padding branches folded into
+    their main case, string copies to storage into one line), which drop
+    branches: never use it as the function's semantics.
+    """
     max_passes = (
         MAX_SIMPLIFY_PASSES_LARGE
         if len(trace) > LARGE_TRACE_THRESHOLD
@@ -146,10 +203,7 @@ def simplify_trace(trace, timeout=0):
     )
 
     def should_quit():
-        q = timeout and (time.monotonic() - time_start > timeout)
-        if q:
-            logger.warning("simplify_trace timed out.")
-        return q
+        return _out_of_time()  # the time limit of simplify_trace
 
     old_trace = None
     count = 0
@@ -179,12 +233,18 @@ def simplify_trace(trace, timeout=0):
         trace = cleanup_mems(trace)
         explain("cleanup mems", trace)
 
+        trace = resolve_call_outputs(trace)
+        explain("call output buffers", trace)
+
         trace = rewrite_trace(trace, split_setmem)
         trace = rewrite_trace_full(trace, split_store)
         explain("split setmems & storages", trace)
 
         trace = cleanup_vars(trace)
         explain("cleanup vars", trace)
+
+        trace = narrow_snapshots(trace)
+        explain("storage fields read into variables", trace)
 
         trace = replace_f(trace, simplify_exp)
         explain("simplify expressions", trace)
@@ -219,48 +279,81 @@ def simplify_trace(trace, timeout=0):
 
     trace = replace_f(trace, postprocess_exp)
     trace = replace_f(trace, postprocess_exp)
-    trace = rewrite_trace_ifs(trace, postprocess_trace)
 
-    trace = rewrite_trace_multiline(trace, rewrite_string_stores, 3)
-    explain("using heuristics to clean up some things", trace)
+    exact = _final_cleanup(trace)
+    if not display:
+        return exact
 
+    # the heuristics of rewriter.py: for the text output only
+    shown = rewrite_trace_ifs(trace, postprocess_trace)
+    shown = rewrite_trace_multiline(shown, rewrite_string_stores, 3)
+    explain("using heuristics to clean up some things", shown)
+
+    shown = exact if shown == trace else _final_cleanup(shown)
+    return exact, replace_f(shown, _shown_field)
+
+
+def _shown_field(exp):
+    """
+    The text output shows a storage field moved up by a byte or more (a
+    bytesN field read left-aligned) as the field itself, as it always did;
+    the exact trace keeps the shift.
+    """
+    if (
+        (m := match(exp, ("mask_shl", ":size", 0, ":int:shl", ("storage", Any, 0, ":loc"))))
+        and m.shl >= 8
+        and exp[4][1] == m.size
+    ):
+        return ("storage", m.size, 0, m.loc)
+    return exp
+
+
+def _final_cleanup(trace):
     for _ in range(3):
         trace = cleanup_mems(trace)
 
     trace = cleanup_conds(trace)
     explain("final setmem/condition cleanup", trace)
 
-    def fix_storages(exp):
-        if (m := match(exp, ("storage", ":size", ":int:off", ":loc"))) and m.off < 0:
-            return ("storage", m.size, 0, m.loc)
-        return exp
-
-    trace = replace_f(trace, fix_storages)
+    # (storage reads keep their offsets: a negative one is never produced,
+    # a field moved up is a mask_shl around it, see apply_mask_to_storage)
     trace = cleanup_conds(trace)
     explain("cleaning up storages slightly", trace)
 
     trace = readability(trace)
     explain("adding nicer variable names", trace)
 
-    trace = cleanup_mul_1(trace)
-
-    return trace
+    return cleanup_mul_1(trace)
 
 
 @cached
 def simplify_exp(exp):
+    """
+    Simplifies an expression. The result keeps the byte length `exp` has
+    when it stands for bytes (memloc.part_width): a word never becomes a
+    slice of another length, which would change a payload or a blob.
+    """
+    res = _simplify_exp(exp)
+    if res is not exp and type(exp) == tuple:
+        width = self_width(exp)
+        if width is None:
+            new_width = self_width(res)
+            if new_width is not None and sub_op(new_width, 32) != 0:
+                res = ("bytes", 32, res)
+        elif sub_op(part_width(res), width) != 0:
+            res = ("bytes", width, res)
+    return res
+
+
+def _is_zero_blob(exp):
+    return opcode(exp) == "data" and all(
+        e == 0 or match(e, ("bytes", Any, 0)) for e in exp[1:]
+    )
+
+
+def _simplify_exp(exp):
     if type(exp) == list:
         return exp
-
-    if m := match(exp, ("mask_shl", 246, 5, 0, ":exp")):
-        exp = (
-            "mask_shl",
-            251,
-            5,
-            0,
-            m.exp,
-        )  # mathematically incorrect, but this appears as an artifact of other
-        # ops often.
 
     if opcode(exp) == "and":
         _, *terms = exp
@@ -282,27 +375,8 @@ def simplify_exp(exp):
         res += tuple(symbols)
         exp = ("and",) + res
 
-    if opcode(exp) == "data" and all(t == 0 for t in exp[1:]):
-        return 0
-
-    if (
-        (
-            m := match(
-                exp,
-                ("mask_shl", ":int:size", ":int:off", ":int:moff", ("cd", ":int:num")),
-            )
-        )
-        and m.moff == -m.off
-        and m.size in (8, 16, 32, 64, 128)
-        and m.off > 0
-    ):
-        return (
-            "mask_shl",
-            m.size,
-            0,
-            0,
-            ("cd", m.num),
-        )  # calldata params are left-padded usually, it seems
+    if exp == ("data",):
+        return None  # no bytes
 
     if m := match(exp, ("iszero", ("iszero", ":e"))):
         exp = ("bool", m.e)
@@ -315,14 +389,15 @@ def simplify_exp(exp):
 
     if (
         (m := match(exp, ("mask_shl", ":int:size", 5, 0, ("add", ":int:num", ...))))
-        and m.size > 240
+        and m.size >= 251
         and m.num % 32 == 31
         and m.num > 32
     ):
+        # floor32(32k + 31 + x) == 32k + floor32(31 + x) (mod 2**256)
         add_terms = exp[-1][2:]  # the "..."
         exp = (
             "add",
-            m.num // 32,
+            32 * (m.num // 32),
             (
                 "mask_shl",
                 256,
@@ -336,8 +411,35 @@ def simplify_exp(exp):
             ),
         )
 
-    if m := match(exp, ("iszero", ("mask_shl", ":size", ":off", ":shl", ":val"))):
+    if (
+        (m := match(exp, ("mask_shl", ":int:size", 5, 0, ("add", 31, ":inner"))))
+        and m.size >= 251
+        and (mi := match(m.inner, ("mask_shl", ":int:isize", 5, 0, ("add", 31, ...))))
+        and mi.isize >= 251
+    ):
+        # ceil32(ceil32(x)) == ceil32(x): a multiple of 32 plus 31 does not wrap
+        exp = m.inner
+
+    if (
+        (m := match(exp, ("iszero", ("mask_shl", ":int:size", ":int:off", ":int:shl", ":val"))))
+        and m.off >= 0
+        and ((m.shl >= 0 and m.off + m.size + m.shl <= 256) or (m.shl < 0 and m.off + m.shl >= 0))
+    ):
         exp = ("iszero", ("mask_shl", m.size, m.off, 0, m.val))
+
+    if (
+        opcode(exp) in ("iszero", "bool")
+        and len(exp) == 2
+        and (m := match(exp[1], ("mask_shl", ":int:size", ":int:off", ":int:shl", ":val")))
+        and opcode(m.val) == "storage"
+        and m.off >= 0
+        and ((m.shl >= 0 and m.off + m.size + m.shl <= 256) or (m.shl < 0 and m.off + m.shl >= 0))
+    ):
+        # a field of a storage word tested against zero (no bit shifted out):
+        # the field itself, as when the VM masks the read directly
+        field = mask_op(m.val, size=m.size, offset=m.off, shl=-m.off)
+        if opcode(field) == "storage":
+            exp = (exp[0], field)
 
     if m := match(exp, ("max", ":single")):
         exp = m.single
@@ -355,18 +457,15 @@ def simplify_exp(exp):
     if m := match(exp, ("mod", 0, Any)):
         exp = 0
 
-    # same thing is added in both expressions ?
-    if (m := match(exp, (":op", ("add", ...), ("add", ...)))) and m.op in (
-        "lt",
-        "le",
-        "gt",
-        "ge",
-    ):
-        e1 = exp[1][1:]  # first ...
-        e2 = exp[2][1:]  # second ...
-        t1 = tuple(t for t in e1 if t not in e2)
-        t2 = tuple(t for t in e2 if t not in e1)
-        exp = (m.op, add_op(*t1), add_op(*t2))
+    # same thing is added in both expressions? a + c == b + c iff a == b
+    # modulo 2**256; the orderings (lt, gt...) do not cancel (wrap-around)
+    if match(exp, ("eq", ("add", ...), ("add", ...))):
+        t1, t2 = list(exp[1][1:]), list(exp[2][1:])
+        for t in exp[1][1:]:
+            if t in t2:
+                t1.remove(t)
+                t2.remove(t)
+        exp = ("eq", add_op(*t1), add_op(*t2))
 
     if m := match(exp, ("add", ":e")):
         logger.debug("single add")
@@ -378,8 +477,25 @@ def simplify_exp(exp):
     if m := match(exp, ("div", ":e", 1)):
         return simplify_exp(m.e)
 
-    if m := match(exp, ("mask_shl", 256, 0, 0, ":val")):
+    if (m := match(exp, ("mask_shl", 256, 0, 0, ":val"))) and self_width(m.val) is None:
         return simplify_exp(m.val)
+
+    if m := match(exp, ("mask_shl", ":size", ":off", ":shl", ("bytes", ":w", ":x"))):
+        # a mask of a byte string part: of its word value
+        return simplify_exp(mask_op(mask_op(m.x, size=bits(m.w)), m.size, m.off, m.shl))
+
+    if (
+        (m := match(exp, ("mask_shl", ":int:size", ":int:off", ":int:shl", ("storage", 256, 0, ":slot"))))
+        and m.size > 0
+        and m.off >= 0
+        and 0 < m.off + m.shl < 8
+        and m.size + m.off + m.shl < 256
+    ):
+        # a narrow storage field shifted by a few bits (x * 2 of a uint32):
+        # the field read, then the shift, the shape the VM gives when it
+        # masks a read directly. A whole word times 2 (mask_shl(255, 0, 1,
+        # w), the shifted field reaching bit 255) stays as it is.
+        return ("mask_shl", m.size, 0, m.off + m.shl, ("storage", m.size, m.off, m.slot))
 
     if m := match(exp, ("mask_shl", ":int:size", ":int:offset", ":int:shl", ":e")):
         exp = mask_op(simplify_exp(m.e), m.size, m.offset, m.shl)
@@ -387,7 +503,7 @@ def simplify_exp(exp):
     if m := match(
         exp, ("mask_shl", ":size", 0, 0, ("div", ":expr", ("exp", 256, ":shr")))
     ):
-        exp = mask_op(simplify_exp(m.expr), m.size, 0, shr=bits(m.shr))
+        exp = mask_op(simplify_exp(m.expr), m.size, bits(m.shr), shr=bits(m.shr))
 
     if (
         m := match(exp, ("mask_shl", Any, Any, ":shl", ("storage", ":size", Any, Any)))
@@ -412,111 +528,14 @@ def simplify_exp(exp):
     if opcode(exp) == "mask_shl":
         exp = cleanup_mask_data(exp)
 
-    if m := match(
-        exp, ("mask_shl", ":size", 0, 0, ("mem", ("range", ":mem_loc", ":mem_size")))
-    ):
-        if divisible_bytes(m.size) and safe_le_op(to_bytes(m.size)[0], m.mem_size):
-            try:
-                return (
-                    "mem",
-                    apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, 0),
-                )
-            except AssertionError:
-                logger.exception("problem with apply_mask_to_range")
-                return exp
+    if opcode(exp) == "data":
+        return simplify_blob(exp)
 
-    if (
-        m := match(
-            exp,
-            (
-                "mask_shl",
-                ":size",
-                ":off",
-                ":shl",
-                ("mem", ("range", ":mem_loc", ":mem_size")),
-            ),
-        )
-    ) and m.shl == minus_op(m.off):
-        if (
-            divisible_bytes(m.size)
-            and safe_le_op(to_bytes(m.size)[0], m.mem_size)
-            and divisible_bytes(m.off)
-        ):
-            try:
-                return (
-                    "mem",
-                    apply_mask_to_range(("range", m.mem_loc, m.mem_size), m.size, m.off),
-                )
-            except AssertionError:
-                logger.exception("problem with apply_mask_to_range")
-                return exp
+    if opcode(exp) == "bytes":
+        return simplify_part(exp)
 
-    elif opcode(exp) == "data":
-        params = exp[1:]
-        res = []
-
-        # simplify inner expressions, and remove nested 'data's
-        for e in params:
-            e = simplify_exp(
-                e
-            )  # removes further nested datas, and does other simplifications
-            if opcode(e) == "data":
-                res.extend(e[1:])
-            else:
-                res.append(e)
-
-        # sometimes we may have on expression split into two masks next to each other
-        # e.g.  (mask_shl 192 64 -64 (cd 36)))) (mask_shl 64 0 0 (cd 36))
-        #       (in solidstamp withdrawRequest)
-        # merge those into one.
-
-        res2 = res
-        res = None
-        while (
-            res2 != res
-        ):  # every swipe merges up to two elements next to each other. repeat until there are no new merges
-            # there's a more efficient way of doing this for sure.
-            res, res2 = res2, []
-            idx = 0
-            while idx < len(res):
-                el = res[idx]
-                if idx == len(res) - 1:
-                    res2.append(el)
-                    break
-
-                next_el = res[idx + 1]
-                idx += 1
-
-                if (
-                    (m := match(el, ("mask_shl", ":size", ":offset", ":shl", ":val")))
-                    and next_el == ("mask_shl", m.offset, 0, 0, m.val)
-                    and add_op(m.offset, m.shl) == 0
-                ):
-                    res2.append(("mask_shl", add_op(m.size, m.offset), 0, 0, m.val))
-                    idx += 1
-
-                else:
-                    res2.append(el)
-
-        res = res2
-
-        # could do the same for mem slices, but no case of that happening yet
-
-        if len(res) == 1:
-            return res[0]
-        else:
-            return ("data",) + tuple(res)
-
-    if m := match(
-        exp, ("mul", -1, ("mask_shl", ":size", ":offset", ":shl", ("mul", -1, ":val")))
-    ):
-        return (
-            "mask_shl",
-            simplify_exp(m.size),
-            simplify_exp(m.offset),
-            simplify_exp(m.shl),
-            simplify_exp(m.val),
-        )
+    if opcode(exp) == "sha3" and len(exp) == 2:
+        return ("sha3", simplify_bytes(exp[1]))
 
     if type(exp) == int and to_real_int(exp) > -(
         8**22
@@ -546,7 +565,8 @@ def simplify_exp(exp):
         exp,
         ("mask_shl", ":size", 5, ":shl", ("add", 31, ("mask_shl", 251, 0, 5, ":val"))),
     ):
-        return simplify_exp(("mask_shl", m.size, 5, m.shl, m.val))
+        # 31 + 32 * v: bits 0..4 are the 31, the rest is 32 * v
+        return simplify_exp(mask_op(("mask_shl", 251, 0, 5, m.val), m.size, 5, m.shl))
 
     if opcode(exp) == "mul":
         terms = exp[1:]
@@ -570,6 +590,9 @@ def simplify_exp(exp):
     res = tuple()
     for e in exp:
         res += (simplify_exp(e),)
+
+    if opcode(res) == "setmem" and len(res) == 3 and _is_zero_blob(res[2]):
+        res = (res[0], res[1], 0)  # zero bytes, whatever the length
 
     return res
 
@@ -618,8 +641,9 @@ def cleanup_mask_data(exp):
     # it removes pieces of data that for sure won't
     # fit into the mask (doesn't truncate if something)
     # partially fits
-    # e.g. mask(200, 8, 8 data(123, mask(201, 0, 0, sth), mask(8,0, 0, sth_else)))
-    #      -> mask(200, 0, 0, mask(201, 0, 0, sth))
+    # e.g. mask(200, 8, 8 data(123, ("bytes", 25, sth), ("bytes", 1, sth_else)))
+    #      -> mask(200, 0, 16, ("bytes", 25, sth)))
+    # Element widths are exact (memloc.part_width): a plain word is 32 bytes.
 
     def _cleanup_right(exp):
         # removes elements that are cut off by offset
@@ -630,10 +654,10 @@ def cleanup_mask_data(exp):
         if opcode(val) != "data":
             return exp
 
-        last = val[-1]
-        if sizeof(last) is not None and safe_le_op(sizeof(last), offset):
-            offset = sub_op(offset, sizeof(last))
-            shl = add_op(shl, sizeof(last))
+        last = bits(part_width(val[-1]))
+        if safe_le_op(last, offset) is True:
+            offset = sub_op(offset, last)
+            shl = add_op(shl, last)
             if len(val) == 3:
                 val = val[1]
             else:
@@ -657,13 +681,11 @@ def cleanup_mask_data(exp):
         sum_sizes = 0
         val = list(val[1:])
         res = []
-        while len(val) > 0:
+        while len(val) > 1:
             last = val.pop()
-            if sizeof(last) is None:
-                return exp
-            sum_sizes = simplify_exp(add_op(sum_sizes, sizeof(last)))
+            sum_sizes = simplify_exp(add_op(sum_sizes, bits(part_width(last))))
             res.insert(0, last)
-            if safe_le_op(total_size, sum_sizes):
+            if safe_le_op(total_size, sum_sizes) is True:
                 return exp[:4] + (("data",) + tuple(res),)
 
         return exp
@@ -680,21 +702,103 @@ def cleanup_mask_data(exp):
         prev_exp = exp
         exp = _cleanup_left(exp)
 
-    if m := match(exp, ("mask_shl", ":size", 0, 0, ("data", ...))):
-        size = m.size
-        terms = exp[-1][1:]  # the "..."
-        # if size of data is size of mask, we can remove the mask altogether
-        sum_sizes = 0
-        for e in terms:
-            s = sizeof(e)
-            if s is None:
-                return exp
-            sum_sizes = add_op(sum_sizes, s)
-
-        if sub_op(sum_sizes, size) == 0:
-            return ("data",) + terms
+    if match(exp, ("mask_shl", 256, 0, 0, ("data", ...))):
+        # a whole word of data is the data itself (both 32 bytes)
+        if sub_op(part_width(exp[4]), 32) == 0:
+            return exp[4]
 
     return exp
+
+
+def simplify_part(exp):
+    """
+    One element of a byte string (a data blob part or a whole payload),
+    simplified without changing its byte length (memloc.part_width): a
+    rewrite that gives an expression of another length is width-tagged.
+    """
+    if exp is None:
+        return None
+
+    if opcode(exp) == "data":
+        return simplify_blob(exp)
+
+    if opcode(exp) == "bytes":
+        width = simplify_exp(exp[1])
+        val = simplify_exp(exp[2])
+        if type(width) == int and type(val) == int and width > 0:
+            if val < 0:
+                val %= 2**256  # a word
+            if 8 * width < val.bit_length():  # bounded by the value itself
+                val %= 1 << (8 * width)
+        return with_width(val, width)
+
+    width = part_width(exp)
+    res = simplify_exp(exp)
+    if sub_op(part_width(res), width) != 0:
+        res = ("bytes", width, res)
+    return res
+
+
+def simplify_bytes(exp):
+    """A byte string expression (payload of a return, revert, log, sha3,
+    call...) simplified without changing its length."""
+    return simplify_part(exp)
+
+
+def _merge_parts(left, right):
+    """Two adjacent blob parts as one when they are pieces of the same word
+    (or constants), else None."""
+    if opcode(left) != "bytes" or opcode(right) != "bytes":
+        return None
+    w1, a = left[1], left[2]
+    w2, b = right[1], right[2]
+    if type(w1) != int or type(w2) != int or w1 + w2 > 32:
+        return None
+    if type(a) == int and type(b) == int:
+        return with_width((a << (8 * w2)) + b, w1 + w2)
+    ma = match(a, ("mask_shl", ":size", ":off", ":shl", ":val"))
+    mb = match(b, ("mask_shl", ":size", ":off", ":shl", ":val"))
+    if (
+        ma
+        and mb
+        and ma.val == mb.val
+        and ma.size == 8 * w1
+        and mb.size == 8 * w2
+        and type(mb.off) == int
+        and ma.off == mb.off + 8 * w2
+        and ma.shl == -ma.off
+        and mb.shl == -mb.off
+    ):
+        merged = mask_op(ma.val, size=8 * (w1 + w2), offset=mb.off, shr=mb.off)
+        return with_width(merged, w1 + w2)
+    return None
+
+
+def simplify_blob(exp):
+    """("data", ...): parts simplified with their widths kept, nested blobs
+    flattened, empty parts dropped, pieces of one word merged back."""
+    parts = []
+    for e in exp[1:]:
+        e = simplify_part(e)
+        if e is None:
+            continue
+        if opcode(e) == "data":
+            parts.extend(e[1:])
+        else:
+            parts.append(e)
+
+    merged = []
+    for e in parts:
+        if merged and (m := _merge_parts(merged[-1], e)) is not None:
+            merged[-1] = m
+        else:
+            merged.append(e)
+
+    if len(merged) == 0:
+        return None
+    if len(merged) == 1:
+        return merged[0]
+    return ("data",) + tuple(merged)
 
 
 def replace_while_var(rest, counter_idx, new_idx):
@@ -913,7 +1017,55 @@ def only_add_in_expr(op):
     return True
 
 
+def _loop_body_writes(path, jd):
+    """
+    What the body `path` of the loop `jd` assigns: (updates, assigned,
+    closed). `updates` are the setvars of its continue lines, at any depth;
+    `assigned` the variables set by any other line (nested loop headers
+    included); `closed` is False when a continue leaves for an outer loop or
+    the body holds an unstructured label.
+    """
+    updates, assigned, targets, loops = [], set(), set(), {jd}
+    closed = True
+
+    def walk(lines):
+        nonlocal closed
+        for line in lines:
+            op = opcode(line)
+            if op == "continue":
+                targets.add(line[1])
+                updates.extend(line[2])
+            elif op == "setvar":
+                assigned.add(line[1])
+            elif op == "if":
+                walk(line[2])
+                walk(line[3])
+            elif op == "while":
+                loops.add(line[3])
+                assigned.update(sv[1] for sv in line[4])
+                walk(line[2])
+            elif op == "label":
+                closed = False
+
+    walk(path)
+    return updates, assigned, closed and targets <= loops
+
+
 def propagate_storage_in_loop(line):
+    """
+    Rebases a loop variable that starts at `X + sha3(K)` (an index into the
+    data of a storage array) to start at X, so that the storage parser sees
+    `sha3(K) + index` in the loop: the loop gets a fresh variable that starts
+    at X, the loop reads `fresh + sha3(K)` where it read the variable, and a
+    `setvar var = fresh + sha3(K)` right after the loop gives the rest of the
+    function the value it reads.
+
+    Only done when this keeps the semantics: sha3(K) has the same value in
+    every iteration, every update of the variable (the continue setvars) is
+    `var + terms` and no update of another variable reads it, no other line
+    of the body assigns it, and every continue goes back to this loop or to
+    one nested in it.
+    """
     op, cond, path, jds, setvars = line
     assert op == "while"
 
@@ -928,48 +1080,70 @@ def propagate_storage_in_loop(line):
             if type(m.val) != int or m.val < 1000:  # used to be int:val here, why?
                 return value
 
-    def path_only_add_in_continue(path):
-        for op in path:
-            if opcode(op) == "continue":
-                _, _, instrs = op
-                if any(not only_add_in_expr(instr) for instr in instrs):
+    updates, assigned, closed = _loop_body_writes(path, jds)
+    if not closed:
+        return None
+    changed = assigned | {sv[1] for sv in setvars} | {sv[1] for sv in updates}
+
+    def self_updates(var_id):
+        # the variable only moves by `var + terms` (terms not reading it)
+        for sv in updates:
+            if sv[1] != var_id:
+                if contains(sv[2], ("var", var_id)):
                     return False
+                continue
+            value = sv[2]
+            if opcode(value) != "add" or ("var", var_id) not in value[1:]:
+                return False
+            rest = list(value[1:])
+            rest.remove(("var", var_id))
+            if contains(rest, ("var", var_id)):
+                return False
         return True
 
-    new_setvars = []
+    new_setvars, restores = [], []
 
     for setvar in setvars:
         op, var_id, value = setvar
         assert op == "setvar"
 
         sha3 = storage_sha3(value)
-        if not sha3:
+        if (
+            not sha3
+            or not _loop_invariant(line, sha3, {})
+            or var_id in assigned
+            or not self_updates(var_id)
+        ):
             new_setvars.append(setvar)
             continue
 
-        # If the "continue" instructions don't only add stuff to the index variable,
-        # it's not safe to proceed. If we would do "i = i * 2", then it doesn't
-        # make sense to substract a constant to "i".
-        if not path_only_add_in_continue(path):
+        fresh = f"r{var_id}"
+        if contains(line, ("var", fresh)) or fresh in changed:
             new_setvars.append(setvar)
             continue
 
-        new_setvars.append(("setvar", var_id, sub_op(value, sha3)))
+        new_setvars.append(("setvar", fresh, sub_op(value, sha3)))
+        restores.append(("setvar", var_id, add_op(("var", fresh), sha3)))
 
-        def add_sha3(t):
-            # We replace occurrences of var by "var + sha3"
+        def rebase(t, var_id=var_id, fresh=fresh, sha3=sha3):
             if t == ("var", var_id):
-                return add_op(t, sha3)
-            # Important: for "continue" we don't want to touch the variable.
-            # TODO: This is only valid if the "continue" contains only
-            # operators like "+" or "-". We should check that.
+                return add_op(("var", fresh), sha3)
             if opcode(t) == "continue":
-                return t
+                svs = [
+                    ("setvar", fresh, replace(sv[2], ("var", var_id), ("var", fresh)))
+                    if sv[1] == var_id
+                    else sv
+                    for sv in t[2]
+                ]
+                return (t[0], t[1], type(t[2])(svs)) + tuple(t[3:])
 
-        path = replace_f_stop(path, add_sha3)
-        cond = replace_f_stop(cond, add_sha3)
+        path = replace_f_stop(path, rebase)
+        cond = replace_f_stop(cond, rebase)
 
-    return [("while", cond, path, jds, new_setvars)]
+    if not restores:
+        return None
+
+    return [("while", cond, path, jds, new_setvars)] + restores
 
 
 def propagate_storage_in_loops(trace):
@@ -1049,10 +1223,10 @@ def _loop_to_setmem(line):
     stepvars = cont[2]
 
     a = parse_counters(line)
-    if "endvars" not in a:
+    if "memvars" not in a:
         return None
 
-    setvars, endvars = a["setvars"], a["endvars"]
+    setvars, endvars = a["setvars"], a["memvars"]
 
     rng, diff = memidx_to_memrange(mem_idx, setvars, stepvars, endvars)
 
@@ -1342,6 +1516,11 @@ def _eval_msize(cond):
 
 
 def cleanup_msize(trace, current_msize=0):
+    if "msize" not in str(trace):
+        # the running maximum of written memory only replaces MSIZE reads:
+        # without them, computing it is wasted (and costly) work
+        return trace
+
     res = []
 
     for line in trace:
@@ -1401,6 +1580,12 @@ def overwrites_mem(line, mem_idx):
 
 
 def affects(line, exp):
+    """True when `line` can give `exp` another value: a write to memory that
+    `exp` reads, or a change of the state it reads (storage, balances, call
+    results..., see core/effects.py)."""
+    if clobbers(line, exp):
+        return True
+
     if type(exp) != tuple and exp != "msize":
         return False
 
@@ -1423,6 +1608,128 @@ def affects(line, exp):
     return False
 
 
+def _kept_in_memory(trace, var_id, var_val):
+    """True when the variable var_id, bound to a time-dependent read var_val
+    (see core/effects.py), is written to memory that is read again after a
+    line that changes var_val: there the inlined read would mean the new
+    value. Such a variable is kept everywhere, so that memory addresses
+    computed from it stay comparable."""
+    if not kinds(var_val):
+        return False
+
+    def used_after_change(trace, rng):
+        for i, line in enumerate(trace):
+            if opcode(line) == "if":
+                return used_after_change(line[2], rng) or used_after_change(line[3], rng)
+            if affects(line, var_val):
+                # the operands of a store or a call are read before its effect
+                start = i if opcode(line) == "while" else i + 1
+                return trace_uses_mem(trace[start:], rng)
+        return False
+
+    def check(trace):
+        for i, line in enumerate(trace):
+            if opcode(line) == "if":
+                return check(line[2]) or check(line[3])
+            if opcode(line) == "setmem" and contains(line, var_id):
+                rng = line[1]
+                if opcode(rng) != "range" or used_after_change(trace[i + 1 :], rng):
+                    return True
+            if affects(line, var_val):
+                return False
+        return False
+
+    return check(trace)
+
+
+def narrow_snapshots(trace):
+    """A storage word read into a variable (`setvar _N (storage 256 0 slot)`)
+    of which every use takes a field (mask_shl(size, off, -off, _N)): the
+    variable holds that field, ("storage", size, off, slot), as a direct read
+    of the field would; with several fields, one variable per field
+    (`_N_<off>`), all read at the same place."""
+    res = []
+    for idx, line in enumerate(trace):
+        if (
+            (m := match(line, ("setvar", ":name", ("storage", 256, 0, ":slot"))))
+            and type(m.name) == str
+            and (fields := _fields_used(trace[idx + 1 :], ("var", m.name)))
+        ):
+            var = ("var", m.name)
+            rest = trace[idx + 1 :]
+            for size, off in sorted(fields):
+                name = m.name if len(fields) == 1 else "%s_%d_%d" % (m.name, off, size)
+                res.append(("setvar", name, ("storage", size, off, m.slot)))
+                rest = replace(rest, ("mask_shl", size, off, -off, var), ("var", name))
+            res.extend(narrow_snapshots(rest))
+            return res
+        if opcode(line) == "if":
+            line = ("if", line[1], narrow_snapshots(line[2]), narrow_snapshots(line[3]))
+        elif opcode(line) == "while":
+            line = line[:2] + (narrow_snapshots(line[2]),) + line[3:]
+        res.append(line)
+    return res
+
+
+def _fields_used(trace, var):
+    """The fields (size, off) of `var` that `trace` uses, when every use is
+    mask_shl(size, off, -off, var) with constants (off < 256) and the
+    variable is not bound again (a loop header read); else None."""
+    fields = set()
+
+    def walk(e):
+        if e == var:
+            return False  # a use of the whole word
+        if type(e) not in (tuple, list):
+            return True
+        if type(e) == tuple and len(e) == 3 and e[0] == "setvar" and e[1] == var[1]:
+            return False  # bound again: the two bindings must stay alike
+        if (
+            type(e) == tuple
+            and len(e) == 5
+            and e[0] == "mask_shl"
+            and e[4] == var
+            and type(e[1]) == int
+            and type(e[2]) == int
+            and e[3] == -e[2]
+            and 0 < e[1]
+            and 0 <= e[2] < 256
+        ):
+            fields.add((e[1], e[2]))
+            return True
+        return all(walk(x) for x in e)
+
+    if not walk(trace) or not fields:
+        return None
+    return fields
+
+
+def trace_affects(trace, exp):
+    """True when a line of `trace`, or of the branches of its ifs, can give
+    `exp` another value."""
+    for line in trace:
+        if affects(line, exp):
+            return True
+        if opcode(line) == "if" and (
+            trace_affects(line[2], exp) or trace_affects(line[3], exp)
+        ):
+            return True
+    return False
+
+
+def _stops_at_label(rest, exps):
+    """A `label` line starts a loop body that runs again after each
+    `continue`: a value from before the label can only be moved into it
+    when nothing in the rest of the trace changes it."""
+    return any(trace_affects(rest, e) for e in exps)
+
+
+def _rebinds(path, var_idx):
+    """The values the lines of `path` (branches and the setvars of continues
+    included) bind the variable var_idx to again."""
+    return find_f_list(path, lambda l: [l[2]] if opcode(l) == "setvar" and l[1] == var_idx else [])
+
+
 """
 
     Memory cleanup
@@ -1442,7 +1749,13 @@ def trace_uses_mem(trace, mem_idx):
             memloc, memval = m.memloc, m.memval
             memval = simplify_exp(memval)
 
-            if exp_uses_mem(memval, mem_idx):
+            # a read of mem_idx in the value or in the address of the write
+            if exp_uses_mem(memval, mem_idx) or exp_uses_mem(memloc, mem_idx):
+                return True
+
+            if affects(line, mem_idx):
+                # the write changes memory the address of mem_idx is computed
+                # from: later, the same expression names other bytes
                 return True
 
             split = memloc_overwrite(
@@ -1456,7 +1769,7 @@ def trace_uses_mem(trace, mem_idx):
             return False
 
         elif opcode(line) == "while":
-            if while_uses_mem(line, mem_idx):
+            if while_uses_mem(line, mem_idx) or affects(line, mem_idx):
                 return True
 
         elif m := match(line, ("if", ":cond", ":if_true", ":if_false")):
@@ -1477,12 +1790,17 @@ def trace_uses_mem(trace, mem_idx):
     return False
 
 
-def cleanup_mems(trace):
+def cleanup_mems(trace, known=None):
     """
     for every setmem, replace future occurences of it with it's value,
     if possible
 
+    known: temporaries bound above to stable values (see replace_mem)
     """
+    known = dict(known or {})
+
+    if _out_of_time():
+        return trace  # the rest stays as it is (exact, see _deadline)
 
     if len(trace) > MAX_MEM_CLEANUP_TRACE_LEN:
         logger.debug(
@@ -1498,15 +1816,7 @@ def cleanup_mems(trace):
         if match(line, ("setmem", ":rng", ("mem", ":rng"))):
             continue
 
-        if opcode(line) in ["call", "staticcall", "delegatecall", "codecall"]:
-            fname, fdata = line[-2:]
-
-            if match(fdata, ("mem", ("range", Any, -4))):
-                line = line[:-2] + (None, None)
-
-            res.append(line)
-
-        elif m := match(line, ("setmem", ":mem_idx", ":mem_val")):
+        if m := match(line, ("setmem", ":mem_idx", ":mem_val")):
             mem_idx, mem_val = m.mem_idx, m.mem_val
 
             # find all the future occurences of var and replace if possible
@@ -1516,18 +1826,18 @@ def cleanup_mems(trace):
                 # The following line is the cause for O(N^2) complexity,
                 # as here we iterate over the trace, and below we call `replace_mem`
                 # over everything that's left in the trace.
-                remaining_trace = replace_mem(trace[idx + 1 :], mem_idx, mem_val)
+                remaining_trace = replace_mem(trace[idx + 1 :], mem_idx, mem_val, known)
 
             if trace_uses_mem(remaining_trace, mem_idx):
                 res.append(line)
 
-            res.extend(cleanup_mems(remaining_trace))
+            res.extend(cleanup_mems(remaining_trace, known))
 
             break
 
         elif opcode(line) == "while":
             _, cond, path, *rest = line
-            path = cleanup_mems(path)
+            path = cleanup_mems(path, known)
             res.append(
                 (
                     "while",
@@ -1539,11 +1849,12 @@ def cleanup_mems(trace):
 
         elif opcode(line) == "if":
             _, cond, if_true, if_false = line
-            if_true = cleanup_mems(if_true)
-            if_false = cleanup_mems(if_false)
+            if_true = cleanup_mems(if_true, known)
+            if_false = cleanup_mems(if_false, known)
             res.append(("if", cond, if_true, if_false))
 
         else:
+            _learn_var(line, known)
             res.append(line)
 
     return res
@@ -1558,35 +1869,6 @@ def replace_mem_exp(exp, mem_idx, mem_val):
         replace_mem_exp(e, mem_idx, mem_val) if type(e) == tuple else e for e in exp
     )
 
-    if opcode(mem_val) not in ("mem", "var", "data"):
-        if m := match(
-            res, ("delegatecall", ":gas", ":addr", ("mem", ":func"), ("mem", ":args"))
-        ):
-            op, f_begin, f_len = m.func
-            assert op == "range"
-            op, a_begin, a_len = m.args
-            assert op == "range"
-            if f_len == 4 and sub_op(add_op(f_begin, f_len), a_begin) == 0:
-                # we have a situation when inside memory is sth like: (range 96 4) (100 ...)
-                # let's merge those two memories, and try to replace with mem exp
-                res_range = simplify_exp(("range", f_begin, add_op(f_len, a_len)))
-                if res_range == mem_idx:
-                    res = ("delegatecall", m.gas, m.addr, None, mem_val)
-
-        if m := match(
-            res, ("call", ":gas", ":addr", ":value", ("mem", ":func"), ("mem", ":args"))
-        ):
-            op, f_begin, f_len = m.func
-            assert op == "range"
-            op, a_begin, a_len = m.args
-            assert op == "range"
-            if f_len == 4 and sub_op(add_op(f_begin, f_len), a_begin) == 0:
-                # we have a situation when inside memory is sth like: (range 96 4) (100 ...)
-                # let's merge those two memories, and try to replace with mem exp
-                res_range = simplify_exp(("range", f_begin, add_op(f_len, a_len)))
-                if res_range == mem_idx:
-                    res = ("call", m.gas, m.addr, m.value, None, mem_val)
-
     if res != exp:
         res = simplify_exp(res)
 
@@ -1597,7 +1879,35 @@ def replace_mem_exp(exp, mem_idx, mem_val):
     return res
 
 
-def replace_mem(trace, mem_idx, mem_val):
+# values that do not depend on memory, storage, calls or other variables:
+# a temporary bound to one of them names the same word anywhere later
+_STATEFUL_ATOMS = ("mem", "storage", "var", "ext_call", "returndatasize", "return_data",
+                   "balance", "tload", "msize", "gas", "code.data", "extcode", "create")
+
+
+def _stable_value(exp):
+    s = str(exp)
+    return not any(a in s for a in _STATEFUL_ATOMS)
+
+
+def _known_vars(exp, known):
+    """`exp` with the temporaries of `known` replaced by their values."""
+    if not known:
+        return exp
+    return replace_f(exp, lambda e: known.get(e[1], e) if opcode(e) == "var" else e)
+
+
+def _learn_var(line, known):
+    """Records a temporary ("_N", assigned once) bound to a stable value."""
+    if (m := match(line, ("setvar", ":name", ":val"))) and type(m.name) == str:
+        val = simplify_exp(_known_vars(m.val, known))
+        if _stable_value(val):
+            known[m.name] = val
+        else:
+            known.pop(m.name, None)
+
+
+def replace_mem(trace, mem_idx, mem_val, known=None):
     """
 
     replaces any reference to mem_idx in the trace
@@ -1622,9 +1932,15 @@ def replace_mem(trace, mem_idx, mem_val):
     ... (the rest unchanged)
 
     """
+    if _out_of_time():
+        return trace  # nothing replaced: the caller keeps the write (exact)
+
     mem_idx = simplify_exp(mem_idx)
     mem_val = simplify_exp(mem_val)
     mem_id = ("mem", mem_idx)
+    # temporaries ("_N", assigned once) bound above to stable values: the
+    # addresses written below are compared with mem_idx through them
+    known = dict(known or {})
 
     if type(mem_val) is tuple and opcode(mem_val) != "mem":
         mem_val = arithmetic.eval(mem_val)
@@ -1632,24 +1948,54 @@ def replace_mem(trace, mem_idx, mem_val):
     res = []
 
     for idx, line in enumerate(trace):
-        if m := match(line, ("setmem", ":memloc", Any)):
-            memloc = simplify_exp(m.memloc)
-            # replace in val
-            res.append(replace_mem_exp(line, mem_idx, mem_val))
-            if range_overlaps(memloc, mem_idx):
+        if match(line, ("setmem", Any, Any)):
+            # replace in the address and the value: both are computed before
+            # the write, when mem_idx still holds mem_val
+            line = replace_mem_exp(line, mem_idx, mem_val)
+            res.append(line)
+            memloc = simplify_exp(line[1])
+            # None: cannot tell, the write may overwrite mem_idx (splits_mem
+            # keeps only the bytes it is sure were not overwritten). The test
+            # sees through the known temporaries.
+            if range_overlaps(memloc, mem_idx) is not False and (
+                not known
+                or range_overlaps(
+                    simplify_exp(_known_vars(memloc, known)),
+                    simplify_exp(_known_vars(mem_idx, known)),
+                )
+                is not False
+            ):
                 split = splits_mem(mem_idx, memloc, mem_val)
                 res2 = trace[idx + 1 :]
                 for s in split:
-                    res2 = replace_mem(res2, s[0], s[1])
+                    # a piece whose value or address reads memory this write
+                    # changes means something else past it (e.g. a copy of
+                    # bytes the write overwrites)
+                    if not (
+                        affects(line, mem_idx)
+                        or affects(line, s[0])
+                        or affects(line, s[1])
+                    ):
+                        res2 = replace_mem(res2, s[0], s[1])
 
                 res.extend(res2)
                 return res
-            if affects(line, mem_val):
+            # the write changes what mem_val or the address of mem_idx are
+            # computed from: later expressions mean other values
+            if affects(line, mem_val) or affects(line, mem_idx):
                 res.extend(copy(trace[idx + 1 :]))
                 return res
 
-        elif affects(line, mem_val) or affects(line, mem_id):
+        elif opcode(line) == "label" and _stops_at_label(trace[idx + 1 :], (mem_val, mem_id)):
             res.extend(copy(trace[idx:]))
+            return res
+
+        elif affects(line, mem_val) or affects(line, mem_id):
+            if opcode(line) != "while":
+                # a store or a call: its operands are read before its effect
+                line = replace_mem_exp(line, mem_idx, mem_val)
+            res.append(line)
+            res.extend(copy(trace[idx + 1 :]))
             return res
 
         elif opcode(line) == "while":
@@ -1673,10 +2019,16 @@ def replace_mem(trace, mem_idx, mem_val):
             mem_idx_false = apply_constraint(mem_idx, is_zero(cond))
             mem_val_false = apply_constraint(mem_val, is_zero(cond))
 
-            if_true = replace_mem(if_true, mem_idx_true, mem_val_true)
-            if_false = replace_mem(if_false, mem_idx_false, mem_val_false)
+            if_true = replace_mem(if_true, mem_idx_true, mem_val_true, known)
+            if_false = replace_mem(if_false, mem_idx_false, mem_val_false, known)
 
             res.append(("if", cond, if_true, if_false))
+            if idx + 1 < len(trace) and (
+                trace_affects([line], mem_val) or trace_affects([line], mem_id)
+            ):
+                # lines after an if run after either branch
+                res.extend(copy(trace[idx + 1 :]))
+                return res
 
         else:
             # speed
@@ -1694,6 +2046,7 @@ def replace_mem(trace, mem_idx, mem_val):
             else:
                 l = line
 
+            _learn_var(l, known)
             res.append(l)
 
     return res
@@ -1727,6 +2080,8 @@ def cleanup_vars(trace, required_after=None):
         for var declarations that are no longer in use, remove them
 
     """
+    if _out_of_time():
+        return trace  # the rest stays as it is (exact, see _deadline)
 
     res = []
 
@@ -1747,9 +2102,14 @@ def cleanup_vars(trace, required_after=None):
 
         elif opcode(line) == "while":
             _, cond, path, *rest = line
+            # the condition runs after the body at every iteration: a
+            # variable it reads (a state read of the loop header, bound
+            # again before each continue) is needed after the path too
             path = cleanup_vars(
                 path,
-                required_after=required_after + find_op_list(trace[idx + 1 :], "var"),
+                required_after=required_after
+                + find_op_list(cond, "var")
+                + find_op_list(trace[idx + 1 :], "var"),
             )
             res.append(
                 (
@@ -1796,6 +2156,9 @@ def replace_var(trace, var_idx, var_val):
     var_id = ("var", var_idx)
     res = []
 
+    if _kept_in_memory(trace, var_id, var_val):
+        return trace
+
     for idx, line in enumerate(trace):
         if m := match(line, ("setmem", ":mem_idx", Any)):
             # this all seems incorrect, (plus 'affects' checks below, needs to be revisited)
@@ -1809,19 +2172,44 @@ def replace_var(trace, var_idx, var_val):
             else:
                 continue
 
+        if opcode(line) == "label" and _stops_at_label(trace[idx + 1 :], (var_val,)):
+            # the label's own setvars are evaluated before the loop
+            res.append(replace(line, var_id, var_val))
+            res.extend(copy(trace[idx + 1 :]))
+            return res
+
+        if opcode(line) == "setvar" and line[1] == var_idx:
+            # bound again: the lines after it read that binding (its own
+            # value is computed before)
+            res.append(replace(line, var_id, var_val))
+            res.extend(copy(trace[idx + 1 :]))
+            return res
+
         if opcode(line) == "while":
             _, cond, path, jd, setvars = line
             setvars = replace(setvars, var_id, var_val)
 
-            if not affects(
-                line, var_val
-            ):  # and not find_f(path, lambda e: e ~ ('setvar', var_idx, _)):
+            again = _rebinds(path, var_idx)
+            if again and (affects(line, var_val) or any(v != var_val for v in again)):
+                # the loop header binds the variable again before each
+                # continue, to another value (a state read the body may
+                # change, or one already forwarded to a value): the
+                # condition, the body and the lines after the loop read
+                # that binding
+                res.append(("while", cond, path, jd, setvars))
+                res.extend(copy(trace[idx + 1 :]))
+                return res
+
+            if not affects(line, var_val):
                 cond = replace(cond, var_id, var_val)
                 path = replace_var(path, var_idx, var_val)
 
             line = ("while", cond, path, jd, setvars)
 
         if affects(line, var_val):
+            if opcode(line) != "while":
+                # a store or a call: its operands are read before its effect
+                line = replace(line, var_id, var_val)
             res.append(line)
             res.extend(copy(trace[idx + 1 :]))
             return res
@@ -1836,6 +2224,10 @@ def replace_var(trace, var_idx, var_val):
             if_true = replace_var(if_true, var_idx, var_val)
             if_false = replace_var(if_false, var_idx, var_val)
             res.append(("if", cond, if_true, if_false))
+            if idx + 1 < len(trace) and trace_affects([line], var_val):
+                # lines after an if run after either branch
+                res.extend(copy(trace[idx + 1 :]))
+                return res
 
         else:
             res.append(replace(line, var_id, var_val))
@@ -1872,14 +2264,15 @@ def swap_cond(cond):
 
 
 def move_right(left, right, exp):
-    assert type(right) != list
-    assert type(left) != list
+    """right with the terms of `left` other than `exp` moved over to it;
+    None when `exp` is not a term of `left`."""
     if left == exp:
         return right
 
     if opcode(left) == "add":
         terms = left[1:]
-        assert exp in terms, terms  # deep embedding unsupported
+        if exp not in terms:  # deep embedding unsupported
+            return None
         for e in terms:
             if e != exp:
                 if type(e) == int:
@@ -1890,14 +2283,15 @@ def move_right(left, right, exp):
 
     if opcode(left) == "mul":
         terms = left[1:]
-        assert exp in terms  # deep embedding unsupported
+        if exp not in terms:  # deep embedding unsupported
+            return None
         for e in terms:
             if e != exp:
-                assert type(e) != list
-                assert type(right) != list
                 right = div_op(right, e)
 
         return right
+
+    return None
 
 
 def normalize(cond):
@@ -1922,14 +2316,12 @@ def normalize(cond):
     if len(right_vars) == 1:
         return normalize(swap_cond(cond))
 
-    assert len(left_vars) == 1 and len(right_vars) == 0, cond
-
     var = left_vars[0]
 
     if opcode(left) != "var":
-        assert type(right) != list
-        assert type(left) != list
         right = move_right(left, right, var)
+        if right is None:
+            return None
         left = var
         cond = (cond[0], left, right)
 
@@ -2010,7 +2402,7 @@ def while_max_memidx(line):
 
     collected = 0
 
-    if "endvars" not in a:
+    if "memvars" not in a:
         for s in setmems:
             collected = _max_op(collected, memloc_right(s))
 
@@ -2020,7 +2412,7 @@ def while_max_memidx(line):
 
     for v in a["setvars"]:
         v_idx, v_start = v[1], v[2]
-        v_end = a["endvars"][v_idx]
+        v_end = a["memvars"][v_idx]
 
         setmems_begin = replace_var(setmems_begin, v_idx, v_start)
         setmems_end = replace_var(setmems_end, v_idx, v_end)
@@ -2097,7 +2489,7 @@ def while_touches_mem(line, mem_idx):
 
     setmems_begin = setmems_end = setmems
 
-    if "endvars" not in a:
+    if "memvars" not in a:
         for (
             s
         ) in (
@@ -2110,7 +2502,7 @@ def while_touches_mem(line, mem_idx):
 
     for v in a["setvars"]:
         v_idx, v_start = v[1], v[2]
-        v_end = a["endvars"][v_idx]
+        v_end = a["memvars"][v_idx]
 
         setmems_begin = replace_var(setmems_begin, v_idx, v_start)
         setmems_end = replace_var(setmems_end, v_idx, v_end)
@@ -2147,7 +2539,7 @@ def while_uses_mem(line, mem_idx):
 
     mems_begin = mems_end = mems
 
-    if "endvars" not in a:
+    if "memvars" not in a:
         for s in mems:
             if range_overlaps(mem_idx, s[1]) is not False:
                 return True
@@ -2156,7 +2548,7 @@ def while_uses_mem(line, mem_idx):
 
     for v in a["setvars"]:
         v_idx, v_start = v[1], v[2]
-        v_end = a["endvars"][v_idx]
+        v_end = a["memvars"][v_idx]
 
         mems_begin = replace_var(mems_begin, v_idx, v_start)
         mems_end = replace_var(mems_end, v_idx, v_end)
@@ -2200,13 +2592,13 @@ def parse_counters(line):
     a["jds"] = jds
 
     conts = find_conts(path)
-    #    print(conts)
-    #    print(find_op_list(path, 'continue'))
-    assert conts == find_op_list(path, "continue")
+    if not conts:
+        return {}
 
     startvars = {}
     for v in setvars:
-        assert (m := match(v, ("setvar", ":vidx", ":vval")))
+        if not (m := match(v, ("setvar", ":vidx", ":vval"))):
+            return {}
         startvars[m.vidx] = m.vval
 
     cond = normalize(cond)
@@ -2225,14 +2617,14 @@ def parse_counters(line):
     counter = cond[1][1]
     counter_stop = cond[2]
     if counter not in startvars:
-        logger.warning("counter %s not in %s", counter, startvars)
+        logger.debug("counter %s not in %s", counter, startvars)
         return {}
     counter_start = startvars[counter]
     a["counter"] = counter
     a["start"] = counter_start
     a["stop"] = counter_stop
     if counter not in stepvars:
-        logger.warning("counter not in stepvars")
+        logger.debug("counter not in stepvars")
         counter_diff = 0
     else:
         counter_diff = stepvars[counter]
@@ -2240,20 +2632,12 @@ def parse_counters(line):
     if len(conts) > 1:
         return a
 
-    if opcode(counter_diff) != "add":
+    counter_step = _linear_step(counter_diff, counter)
+    if counter_step is None:
+        # not `counter + constant` (a narrow counter's wrapping update, a
+        # product...): no closed form
         return a
 
-    assert type(counter_diff[1]) == int
-
-    counter_diff = (counter_diff[0], to_real_int(counter_diff[1]), counter_diff[2])
-
-    # counter_diff[2] ~ ('mul', 1, X) -> counter_diff[2] = X
-    if opcode(counter_diff[2]) == "mul" and counter_diff[2][1] == 1:
-        counter_diff = (counter_diff[0], counter_diff[1], counter_diff[2][2])
-
-    assert counter_diff[2] == ("var", counter), counter_diff
-
-    counter_step = to_real_int(counter_diff[1])
     a["step"] = counter_step
 
     num_loops = div_op(
@@ -2268,12 +2652,111 @@ def parse_counters(line):
 
     a["num_loops"] = num_loops
 
-    a["endvars"] = {}
+    # start + step * num_loops for every variable that moves by a constant
+    # per iteration (none when one does not)
+    closed = {}
     for v in setvars:
         var_idx, var_val = v[1], to_real_int(v[2])
-        var_diff = to_real_int(stepvars[var_idx][1])
-        assert type(num_loops) != list
-        var_stop = add_op(var_val, mul_op(var_diff, num_loops))
-        a["endvars"][var_idx] = var_stop
+        var_diff = _linear_step(stepvars.get(var_idx, ("var", var_idx)), var_idx)
+        if var_diff is None:
+            return a
+        closed[var_idx] = add_op(var_val, mul_op(var_diff, num_loops))
 
+    # "memvars": the closed forms where the loop runs as the formula assumes
+    # (start <= bound): the memory analyses use them for the range a loop
+    # writes, as they always did.
+    a["memvars"] = closed
+
+    # "endvars": the values after the loop, which replace the variables in
+    # the code after it. Exact only when the loop runs num_loops times: a
+    # counter compared as it is, from 0 up to a bound the loop does not
+    # change (num_loops = ceil(bound / step), an exact division above), or
+    # down from a start known to be above the bound. Otherwise the variables
+    # stay as they are after the loop.
+    raw_cond = line[1]
+    direct = opcode(raw_cond) in ("lt", "gt") and ("var", counter) in raw_cond[1:]
+    if not direct:
+        # the counter inside an expression (i + 1 < n): the bound was moved
+        # across the comparison, which is not exact modulo 2**256
+        return a
+    if not (
+        (counter_step > 0 and counter_start == 0 and cond[0] == "le")
+        or (
+            counter_step < 0
+            and cond[0] == "ge"
+            and safe_le_op(counter_stop, counter_start) is True
+        )
+    ):
+        return a
+    if not _loop_invariant(line, counter_stop, stepvars):
+        return a
+
+    a["endvars"] = closed
     return a
+
+
+def _linear_step(update, var_idx):
+    """c when `update` (the value a loop variable gets at a `continue`) is
+    var + c with a constant c, 0 when it is the variable itself, else None."""
+    if update == ("var", var_idx):
+        return 0
+    if opcode(update) != "add" or len(update) != 3:
+        return None
+    _, c, x = update
+    if type(c) != int:
+        c, x = x, c
+    if type(c) != int:
+        return None
+    # ('mul', 1, X) -> X
+    if opcode(x) == "mul" and len(x) == 3 and x[1] == 1:
+        x = x[2]
+    if x != ("var", var_idx):
+        return None
+    return to_real_int(c)
+
+
+def _loop_invariant(while_line, exp, stepvars):
+    """True when `exp` has the same value at every test of the loop: no
+    variable the loop sets, and nothing in the loop changes what it reads."""
+    _, _, path, _, setvars = while_line
+    names = {v[1] for v in setvars}
+    names |= set(find_f_list(path, lambda l: [l[1]] if opcode(l) == "setvar" else []))
+    if any(e[1] in names for e in find_op_list(exp, "var")):
+        return False
+    if clobbers(while_line, exp):
+        return False
+    # memory: a write of the loop that may overlap a read of exp
+    # (affects() would come back here through while_touches_mem)
+    if "msize" in str(exp):
+        return False
+    reads = find_op_list(exp, "mem")
+    if reads:
+        for s in find_f_list(path, lambda l: [l] if opcode(l) == "setmem" else []):
+            for r in reads:
+                if not _write_misses(r[1], s[1], setvars, stepvars):
+                    return False
+    return True
+
+
+def _write_misses(read, write, setvars, stepvars):
+    """True when a write of a loop to the range `write` never touches the
+    range `read`. A write address `c + v + ...` made of loop variables that
+    start at 0 and only grow stays at or above c: below it (without
+    wrapping around 2**256, which no loop runs long enough to reach)."""
+    if opcode(read) != "range" or opcode(write) != "range":
+        return False
+    if range_overlaps(read, write) is False:
+        return True
+    start = write[1]
+    terms = start[1:] if opcode(start) == "add" else (start,)
+    starts = {v[1]: v[2] for v in setvars}
+    low = 0
+    for t in terms:
+        if type(t) == int:
+            low += t
+        elif opcode(t) == "var" and starts.get(t[1]) == 0 and (_linear_step(stepvars.get(t[1]), t[1]) or 0) > 0:
+            pass
+        else:
+            return False
+    read_end = add_op(read[1], read[2])
+    return type(read_end) == int and 0 <= read_end <= low < 2**255

@@ -10,6 +10,7 @@
 """
 
 import logging
+import string
 import sys
 from copy import deepcopy
 from functools import partial
@@ -29,7 +30,7 @@ from scobelix.core.algebra import (
 )
 from scobelix.core.arithmetic import is_zero, simplify_bool
 from scobelix.core.masks import get_bit, mask_to_type
-from scobelix.loader import Loader
+from scobelix.dispatcher import is_selector_expr
 from scobelix.matcher import Any, match
 from scobelix.utils.helpers import (
     COLOR_BLUE,
@@ -46,6 +47,7 @@ from scobelix.utils.helpers import (
     all_concrete,
     clean_color,
     colorize,
+    find_op_list,
     is_array,
     opcode,
     padded_hex,
@@ -55,9 +57,11 @@ from scobelix.utils.helpers import (
     replace_lines,
     to_exp2,
 )
-from scobelix.utils.signatures import get_param_name
+from scobelix.utils.signatures import find_sig_name, get_param_name
 
 logger = logging.getLogger(__name__)
+
+PANIC_SELECTOR = 0x4E487B71  # Panic(uint256)
 
 PANIC_CODES = {
     0x00: "Used for generic compiler inserted panics.",
@@ -278,10 +282,17 @@ def pprint_logic(exp, indent=2):
             yield l
 
     elif opcode(exp) == "require":
-        _, cond = exp
-        yield " " * indent + "require " + prettify(
-            exp[1], add_color=True, parentheses=False, rem_bool=True
-        ) + ""
+        # ("require", cond, line): `line` (a revert or invalid) runs when
+        # cond is false; older traces have no line
+        cond = exp[1]
+        fail = exp[2] if len(exp) > 2 else ("revert", None)
+        if fail == ("revert", None) or opcode(fail) == "invalid":
+            yield " " * indent + "require " + prettify(
+                cond, add_color=True, parentheses=False, rem_bool=True
+            ) + ""
+        else:
+            for l in pprint_logic(("if", is_zero(cond), [fail]), indent):
+                yield l
 
     elif m := match(
         exp, ("if", ":cond", ":if_true")
@@ -290,7 +301,7 @@ def pprint_logic(exp, indent=2):
         if (
             len(if_true) == 1
             and (first := if_true[0])
-            and ((first == ("revert", 0)) or opcode(first) == "invalid")
+            and ((first == ("revert", None)) or opcode(first) == "invalid")
         ):
             yield " " * indent + "require " + prettify(
                 is_zero(exp[1]), add_color=True, parentheses=False, rem_bool=True
@@ -307,7 +318,7 @@ def pprint_logic(exp, indent=2):
         if (
             len(if_false) == 1
             and (first := if_false[0])
-            and (first == ("revert", 0) or opcode(first) == "invalid")
+            and (first == ("revert", None) or opcode(first) == "invalid")
         ):
             yield " " * indent + "require " + prettify(
                 exp[1], add_color=True, parentheses=False, rem_bool=True
@@ -319,7 +330,7 @@ def pprint_logic(exp, indent=2):
         elif (
             len(if_true) == 1
             and (first := if_true[0])
-            and ((first == ("revert", 0)) or opcode(first) == "invalid")
+            and ((first == ("revert", None)) or opcode(first) == "invalid")
         ):
             yield " " * indent + "require " + prettify(
                 is_zero(exp[1]), add_color=True, parentheses=False, rem_bool=True
@@ -394,6 +405,7 @@ def pretty_line(r, add_color=True):
 
     elif match(r, ("log", ":params", ...)):
         _, params, *events = r
+        num_indexed = len(events) - 1  # topics after topic0
 
         # solidstamp and dao cover most of those cases
         res_params = pretty_memory(params, add_color=False)
@@ -408,7 +420,17 @@ def pretty_line(r, add_color=True):
                 break
                 # breaks with more than one proper event
 
-        res_events = tuple(pretty_fname(e, add_color=False, force=True) for e in events)
+        # only topic0 identifies the event (other int topics are values)
+        res_events = tuple(
+            pretty_fname(
+                e,
+                add_color=False,
+                force=True,
+                kind="event" if i == 0 else None,
+                num_indexed=num_indexed,
+            )
+            for i, e in enumerate(events)
+        )
         res_events = tuple((x[:10] if x[:2] == "0x" else x) for x in res_events)
         for e in res_events:
             if e.count("(") != 1:
@@ -435,7 +457,7 @@ def pretty_line(r, add_color=True):
                         ]:
                             p_list.append((ptype, pname, res_params[int(idx)]))
                     except Exception:
-                        logger.warning(f"weird log {e} {fparams}")
+                        logger.warning("weird log %s %s", e, fparams)
                         yield (f"log {e}")
                         return
 
@@ -469,7 +491,8 @@ def pretty_line(r, add_color=True):
     #                        print(repr(len(fparams)), len(res_params))
 
     elif m := match(r, ("callcode", ":gas", ":addr", ":wei", ":fname", ":fparams")):
-        gas, addr, wei, fname, fparams = m.gas, m.addr, m.wei, m.fname, m.fparams
+        gas, addr, wei = m.gas, m.addr, m.wei
+        fname, fparams = split_payload(m.fname, m.fparams)
         fname = pretty_fname(fname, add_color=add_color)
 
         if type(addr) == int:
@@ -500,7 +523,8 @@ def pretty_line(r, add_color=True):
             yield "    args {}".format(", ".join(fparams))
 
     elif m := match(r, ("delegatecall", ":gas", ":addr", ":fname", ":fparams")):
-        gas, addr, fname, fparams = m.gas, m.addr, m.fname, m.fparams
+        gas, addr = m.gas, m.addr
+        fname, fparams = split_payload(m.fname, m.fparams)
         fname = pretty_fname(fname, add_color=add_color)
 
         if type(addr) == int:
@@ -550,7 +574,8 @@ def pretty_line(r, add_color=True):
         yield f"                code: {prettify(m.code)}"
 
     elif m := match(r, ("call", ":gas", ":addr", ":wei", ":fname", ":fparams")):
-        gas, addr, wei, fname, fparams = m.gas, m.addr, m.wei, m.fname, m.fparams
+        gas, addr, wei = m.gas, m.addr, m.wei
+        fname, fparams = split_payload(m.fname, m.fparams)
 
         if type(addr) == int:
             if len(hex(addr)) > 22 + 2:
@@ -588,7 +613,8 @@ def pretty_line(r, add_color=True):
             yield "    args {}".format(", ".join(fparams))
 
     elif m := match(r, ("staticcall", ":gas", ":addr", ":wei", ":fname", ":fparams")):
-        gas, addr, wei, fname, fparams = m.gas, m.addr, m.wei, m.fname, m.fparams
+        gas, addr, wei = m.gas, m.addr, m.wei
+        fname, fparams = split_payload(m.fname, m.fparams)
         if type(addr) == int:
             addr = hex(addr)
 
@@ -623,8 +649,22 @@ def pretty_line(r, add_color=True):
         yield COLOR_GREEN + f"continue {str(rest)}" + ENDC
 
     elif m := match(r, ("continue", ":jd", ":setvars")):
+        # the setvars of a continue are assigned all at once: shown as one
+        # tuple assignment when a value reads a variable set before it
+        assigned, parallel = set(), False
         for v in m.setvars:
-            yield str(list(pretty_line(v, add_color=True))[0])
+            if any(e[1] in assigned for e in find_op_list(v[2], "var")):
+                parallel = True
+            assigned.add(v[1])
+        if parallel:
+            names = ", ".join(prettify(("var", v[1]), add_color=add_color) for v in m.setvars)
+            values = ", ".join(
+                prettify(v[2], add_color=add_color, parentheses=False) for v in m.setvars
+            )
+            yield f"{names} = {values}"
+        else:
+            for v in m.setvars:
+                yield str(list(pretty_line(v, add_color=True))[0])
         yield COLOR_GREEN + "continue " + ENDC  # +str(jd)+ENDC
 
     elif opcode(r) == "setvar":
@@ -693,8 +733,12 @@ def pretty_line(r, add_color=True):
         else:
             yield "revert"
 
-    elif r == ("revert", 0) or r == ("revert", ("mem", 0, 0)):
+    elif r == ("revert", None):
         yield "revert"
+
+    elif r == ("return", None):
+        # RETURN without data (the 32-byte zero word is ("return", 0))
+        yield "return"
 
     elif (
         m := match(r, (":op", ("mem", ("range", ":mem_idx", ":mem_len"))))
@@ -718,11 +762,18 @@ def pretty_line(r, add_color=True):
 
         if op == "revert":
             op = "revert with"
-
-        res_mem = pretty_memory(param, add_color=True)
+            # a revert payload starts with an error selector; a payload of
+            # just the selector is a custom error without arguments
+            error = try_fname(payload_selector(param), add_color=True, kind="error")
+            if error:
+                res_mem = (error,)
+            else:
+                res_mem = pretty_memory(param, add_color=True, selector_kind="error")
+        else:
+            res_mem = pretty_memory(param, add_color=True)
         ret_val = ", ".join(res_mem)
 
-        if m := match(r, ("revert", ("data", "'NH{q'", ":int:panic_code"))):
+        if m := match(r, ("revert", ("data", ("bytes", 4, PANIC_SELECTOR), ":int:panic_code"))):
             explanation = (
                 (f" {COLOR_GRAY}# " + PANIC_CODES[m.panic_code] + ENDC)
                 if m.panic_code in PANIC_CODES
@@ -891,6 +942,14 @@ def pretty_num(exp, add_color):
         if exp - int(exp) == 0:
             exp = int(exp)
 
+    if type(exp) == int and 10**15 < exp < 2**256:
+        # constants whose bytes are printable text (the trace keeps ints):
+        # one run of characters, zero bytes only around it
+        raw = exp.to_bytes((exp.bit_length() + 7) // 8, "big").rstrip(b"\0")
+        text = pretty_bignum(exp)
+        if b"\0" not in raw and type(text) == str:
+            return text
+
     if type(exp) == int and exp > 8**50:
         return hex(
             exp
@@ -915,12 +974,9 @@ def pretty_num(exp, add_color):
                 return f"{exp // (10**count)} * 10^{count}"
 
     if type(exp) == int:
-        if try_fname(exp, add_color) != None:
-            return try_fname(exp, add_color)
-
-        elif (
-            type(exp) == int and (exp & 2**256 - 1) < 8**30
-        ):  # if it's larger than 30 bytes, it's probably
+        # no signature lookup here: an arbitrary constant is not a selector
+        # (see try_fname for the positions where it is)
+        if (exp & 2**256 - 1) < 8**30:  # if it's larger than 30 bytes, it's probably
             # an address, not a negative number
             return str(to_real_int(exp))
 
@@ -962,6 +1018,35 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
 
     if type(exp) in (int, float):
         return pretty_num(exp, add_color)
+
+    if (
+        (m := match(exp, ("bytes", ":int:width", ":int:val")))
+        and 0 < m.width < 32
+        and m.val % (1 << (8 * m.width)) != 0
+    ):
+        # constant bytes narrower than a word (not zero padding): their
+        # text, or every hex digit (0x1901, 0x61), so that the width shows;
+        # a selector is named by the selector positions, never here
+        raw = (m.val % (1 << (8 * m.width))).to_bytes(m.width, "big")
+        if len(raw) > 1 and all(32 <= c < 127 and c != 39 for c in raw):
+            return "'" + raw.decode() + "'"
+        return "0x" + raw.hex()
+
+    if m := match(exp, ("bytes", Any, ":val")):
+        # a part of a byte string with an explicit width: shown by its value
+        return prettify(m.val, add_color=add_color, parentheses=parentheses)
+
+    if m := match(exp, ("byte", ":idx", ":val")):
+        return f"byte({pret(m.idx)}, {pret(m.val)})"
+
+    if m := match(exp, ("addmod", ":a", ":b", ":m")):
+        return f"addmod({pret(m.a)}, {pret(m.b)}, {pret(m.m)})"
+
+    if (m := match(exp, ("signextend", ":int:b", ":val"))) and 0 <= m.b < 31:
+        return col(f"int{8 * (m.b + 1)}(", COLOR_GRAY) + pret(m.val) + col(")", COLOR_GRAY)
+
+    if m := match(exp, ("signextend", ":b", ":val")):
+        return f"signextend({pret(m.b)}, {pret(m.val)})"
 
     if opcode(exp) in precompiled.values():
         return f"{exp[0]}({pret(exp[1])})"
@@ -1005,9 +1090,9 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
     if m := match(exp, ("tload", ":idx")):
         return f"tstorage[{pret(m.idx)}]"
 
-    if opcode(exp) == "max":
+    if opcode(exp) in ("max", "min"):
         _, *terms = exp
-        return "max({})".format(", ".join([pret(e) for e in terms]))
+        return "{}({})".format(exp[0], ", ".join([pret(e) for e in terms]))
 
     if exp == "number":
         return "block.number"
@@ -1200,7 +1285,14 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         return pret(("var", m.idx)) + " = " + pret(m.val, parentheses=False)
 
     if m := match(exp, ("setmem", ":idx", ":val")):  # --,,--
-        return pret(("mem", m.idx)) + " = " + pret(m.val)
+        fname = None
+        value = selector_value(m.val)
+        if match(m.idx, ("range", Any, 4)) and value is not None and 2**24 <= value < 2**32:
+            # a 4-byte constant written to memory: the selector heading an
+            # encoded call (abi.encodeWithSelector / encodeWithSignature);
+            # smaller values are packed integers (abi.encodePacked(uint32))
+            fname = try_fname(value, add_color)
+        return pret(("mem", m.idx)) + " = " + (fname or pret(m.val))
 
     if m := match(exp, ("mask_shl", ":size", ":offset", ":shl", ":val")):
         size, offset, shl, val = m.size, m.offset, m.shl, m.val
@@ -1209,16 +1301,17 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
             all_concrete(size, offset, shl)
             and exp[1] + exp[2] == 256
             and exp[2] == -exp[3]
-            and exp[2] < 8
+            and exp[2] > 0
         ):
+            # the top bits moved down: x >> k (the VM's SHR, div by 2**k)
             # e.g. (Mask(255, 1, eth.balance(this.address)) >> 1
             #           --> eth.balance(this.address) / 2
             # for offsets smaller than 8
 
-            if exp[3] <= 8:
-                return pret(("div", exp[4], 2 ** -exp[3]), parentheses=parentheses)
+            if exp[2] < 8:
+                return pret(("div", exp[4], 2 ** exp[2]), parentheses=parentheses)
             else:
-                return pret(("shr", exp[3], exp[4]), parentheses=parentheses)
+                return pret(("shr", exp[2], exp[4]), parentheses=parentheses)
 
         if (
             (type(exp[1]), type(exp[2]), type(exp[3])) == (int, int, int)
@@ -1329,6 +1422,8 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         "mod": " % ",
         "shl": " << ",
         "shr": " >> ",
+        "sar": " >>′ ",
+        "smod": " %′ ",
         "exp": "^",
         "and": " and ",
         "sge": " >=′ ",
@@ -1361,10 +1456,17 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
             real = to_real_int(exp[1])
             symbolic = exp[2:]
             res = " + ".join([prettify(x, add_color=add_color) for x in symbolic])
+            name = None
+            if len(symbolic) == 1 and (m := match(symbolic[0], ("mul", -1, ":sel"))):
+                # via-IR selector test `K - selector`
+                name = pretty_selector_operand(exp[1], m.sel, add_color)
+            elif len(symbolic) == 1 and real < 0:
+                # selector test `selector - K`
+                name = pretty_selector_operand(-real, symbolic[0], add_color)
             if real > 0:
-                res += " + " + prettify(real)
+                res += " + " + (name or prettify(real))
             elif real < 0:
-                res += " - " + prettify(-real)
+                res += " - " + (name or prettify(-real))
 
         else:
             res = ""
@@ -1412,7 +1514,7 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         return pret(m.a, parentheses=True) + "^" + pret(m.n, parentheses=True)
 
     if opcode(exp) in opcode_to_arithm:
-        if opcode(exp) in ["shl", "shr"]:
+        if opcode(exp) in ["shl", "shr", "sar"]:
             exp = exp[0], exp[2], exp[1]
 
         form = "{}"
@@ -1439,6 +1541,30 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
         if opcode(exp) == "and":
             exp = fold_ands(exp)
             return form.format(op_form.join(pret(e, rem_bool=True) for e in exp[1:]))
+        elif opcode(exp) in ("eq", "gt", "lt", "ge", "le", "xor") and len(exp) == 3:
+            unsigned = opcode(exp) in ("lt", "gt", "le", "ge")
+
+            def operand(e, other):
+                # a constant compared with the calldata selector is printed
+                # by name; in an unsigned comparison, a negative constant is
+                # a large word (-2 is 2^256 - 2), never a negative number
+                name = pretty_selector_operand(e, other, add_color)
+                if name:
+                    return name
+                if unsigned and type(e) == int and -(2**255) <= e < 0:
+                    return "2^256 - " + pret(-e)
+                return pret(e)
+
+            return form.format(op_form.join((operand(exp[1], exp[2]), operand(exp[2], exp[1]))))
+        elif opcode(exp) in ("lt", "gt", "le", "ge"):
+            # unsigned comparison: a negative constant is a large word
+            # (-2 is 2^256 - 2), never a negative number
+            return form.format(
+                op_form.join(
+                    "2^256 - " + pret(-e) if type(e) == int and -(2**255) <= e < 0 else pret(e)
+                    for e in exp[1:]
+                )
+            )
         else:
             return form.format(op_form.join(pret(e) for e in exp[1:]))
 
@@ -1446,25 +1572,53 @@ def prettify(exp, rem_bool=False, parentheses=True, top_level=False, add_color=F
     if m := match(exp, ("iszero", ":val")):
         val = m.val
 
-        def s(x):
-            r = pret(x)
+        def s(x, other):
+            r = pretty_selector_operand(x, other, add_color) or pret(x)
             return r if r is not None else str(x)
 
         if m2 := match(val, ("gt", ":left", ":right")):
-            return f"({s(m2.left)} <= {s(m2.right)})"
+            return f"({s(m2.left, m2.right)} <= {s(m2.right, m2.left)})"
 
         if m2 := match(val, ("lt", ":left", ":right")):
-            return f"({s(m2.left)} >= {s(m2.right)})"
+            return f"({s(m2.left, m2.right)} >= {s(m2.right, m2.left)})"
 
         if m2 := match(val, ("eq", ":left", ":right")):
-            return f"({s(m2.left)} != {s(m2.right)})"
+            return f"({s(m2.left, m2.right)} != {s(m2.right, m2.left)})"
 
-        return f"({s(val)} == 0)"
+        return f"({s(val, None)} == 0)"
 
     return str(exp)
 
 
 
+
+
+def split_payload(fname, fparams):
+    """
+    (selector, arguments) of a call for display. The trace keeps the payload
+    whole (fname None, fparams = the payload bytes): a leading 4-byte part is
+    shown as the called function, the rest as its arguments.
+    """
+    if fname is not None or fparams is None:
+        return fname, fparams
+
+    def is_selector(part):
+        return (
+            match(part, ("bytes", 4, Any))
+            or match(part, ("mem", ("range", Any, 4)))
+            or (is_array(opcode(part)) and len(part) == 3 and part[2] == 4)
+        )
+
+    if is_selector(fparams):
+        return (fparams[2] if opcode(fparams) == "bytes" else fparams), None
+
+    if opcode(fparams) == "data" and len(fparams) > 2 and is_selector(fparams[1]):
+        first = fparams[1]
+        sel = first[2] if opcode(first) == "bytes" else first
+        rest = fparams[2:]
+        return sel, rest[0] if len(rest) == 1 else ("data",) + rest
+
+    return None, fparams
 
 
 def pretty_gas(gas, value, add_color):
@@ -1475,29 +1629,37 @@ def pretty_gas(gas, value, add_color):
         return prettify(gas, add_color=add_color, parentheses=False)
 
 
-def try_fname(exp, add_color=False):
-    if Loader.find_sig(hex(exp)[:10]):
-        return Loader.find_sig(hex(exp)[:10], add_color)
+def try_fname(exp, add_color=False, kind="function", num_indexed=None):
+    """Signature name of `exp`, a value in a selector position: the selector
+    of a call or of a calldata comparison ("function"), the first word of a
+    revert payload ("error"), the topic0 of a log ("event", with the number
+    of topics after it). A 4-byte value may also come left-aligned in a word.
+    Never call it on other constants: any int would match some 4-byte key.
+    """
+    exp = selector_value(exp)
+    if kind is None or exp is None or exp <= 0 or exp >= 2**256:
+        return None  # 0 is an empty or lost selector (zeroed memory)
 
-    elif len(hex(exp)) >= 63 and Loader.find_sig(
-        padded_hex(exp, 64)[:10], add_color
-    ):  # in Loader.signatures: # if three last letters are "0"s, but no more, so there is
-        # a low chance for mistaking a random number for function sig
-        return Loader.find_sig(padded_hex(exp, 64)[:10], add_color)
+    if kind == "event":
+        return find_sig_name(exp, kind, add_color, num_indexed)
 
-    elif len(hex(exp)) >= 8 and Loader.find_sig(
-        padded_hex(exp, 8)[:10], add_color
-    ):  # in Loader.signatures:
-        return Loader.find_sig(padded_hex(exp, 8)[:10], add_color)
+    if exp >= 2**32:
+        if exp % 2**224:
+            return None
+        exp >>= 224
 
-    else:
-        return None
+    # a revert payload may be a raw word (an error code) rather than a
+    # selector: a small value only names a declared custom error, not a
+    # signature of another kind with that hash (vanity selectors such as
+    # 0x00000001 exist)
+    typed_only = kind == "error" and exp < 2**24
+    return find_sig_name(exp, kind, add_color, typed_only=typed_only)
 
 
-def pretty_fname(exp, add_color=False, force=False):
+def pretty_fname(exp, add_color=False, force=False, kind="function", num_indexed=None):
     if type(exp) == int:
-        fname = try_fname(exp, add_color)
-        if fname and "unknown_" not in fname:
+        fname = try_fname(exp, add_color, kind, num_indexed)
+        if fname:
             return fname
         else:
             return hex(exp)
@@ -1508,7 +1670,95 @@ def pretty_fname(exp, add_color=False, force=False):
     return exp
 
 
-def pretty_memory(exp, add_color=False):
+def _constant_bytes(part):
+    """Bytes of a constant part of a data blob (a word is 32 bytes), None
+    when the part is not constant."""
+    if type(part) == int:
+        return (part % 2**256).to_bytes(32, "big")
+    if (
+        opcode(part) == "bytes"
+        and type(part[1]) == int
+        and type(part[2]) == int
+        and 0 <= part[1] <= 1 << 16
+    ):
+        return (part[2] % (1 << (8 * part[1]))).to_bytes(part[1], "big")
+    return None
+
+
+def selector_value(exp):
+    """The constant held by a selector position: an int, or an explicit 4-byte
+    part of a byte string, ("bytes", 4, K) = the low 4 bytes of K; else None."""
+    if type(exp) == int:
+        return exp
+    if m := match(exp, ("bytes", 4, ":int:val")):
+        return m.val % 2**32
+    return None
+
+
+def payload_selector(part):
+    """The selector a byte string starts with, `part` being its first part:
+    an explicit 4-byte part, ("bytes", 4, K), or a word whose low 28 bytes
+    are zero (a left-aligned bytes4); else None. A plain word below 2**224
+    starts with zero bytes: it holds a number (a raw revert word, a return
+    value, log data), not a selector."""
+    if m := match(part, ("bytes", 4, ":int:val")):
+        return m.val % 2**32
+    if type(part) == int and 2**224 <= part < 2**256 and part % 2**224 == 0:
+        return part >> 224
+    return None
+
+
+def is_selector_exp(exp):
+    """True for the calldata selector, the top 4 bytes of cd[0]: the forms the
+    dispatcher recognises (dispatcher.is_selector_expr) or `shr(224, cd[0])`,
+    possibly masked to its low 32 bits or more. Other reads of cd[0] (the
+    whole word, its first byte, its low 4 bytes `uint32(cd[0])`...) are not
+    selectors: contracts with a custom dispatch compare them with constants."""
+    while True:
+        if (m := match(exp, ("mask_shl", ":int:size", 0, 0, ":inner"))) and m.size >= 32:
+            exp = m.inner
+        elif opcode(exp) == "and" and len(exp) == 3 and int in (type(exp[1]), type(exp[2])):
+            mask, inner = (exp[1], exp[2]) if type(exp[1]) == int else (exp[2], exp[1])
+            if mask < 2**32 - 1 or mask & (mask + 1):  # not a low mask of >= 32 bits
+                return False
+            exp = inner
+        else:
+            break
+
+    return is_selector_expr(exp) or exp == ("shr", 224, ("cd", 0))
+
+
+def is_word_head_exp(exp):
+    """True for the first 4 bytes of a word, `x >> 224` (`mask_shl(32, 224,
+    -224, x)`, `mask_shl(256, -224, -224, x)`), or of returned data or
+    memory read 4 bytes wide (`uint32(ext_call.return_data[0 len 4])`)."""
+    if m := match(exp, ("mask_shl", 32, 0, 0, ":inner")):
+        exp = m.inner
+    if match(exp, ("ext_call.return_data", Any, 4)) or match(exp, ("mem", ("range", Any, 4))):
+        return True
+    return opcode(exp) == "mask_shl" and exp[1:4] in ((32, 224, -224), (256, -224, -224))
+
+
+def pretty_selector_operand(val, other, add_color=False):
+    """`val` as printed when it is compared with a selector: the calldata one
+    (dispatcher tests, `msg.sig == X`) or the head of another word (returned
+    data decoded by try/catch: error selectors). Its signature name, else its
+    8 hex digits (a selector nobody named); None when `val` is not such an
+    operand."""
+    if type(val) != int:
+        return None
+    if is_selector_exp(other) and 0 <= val < 2**32:
+        # a 4-byte value: never equal to a left-aligned constant
+        return try_fname(val, add_color) or "0x%08x" % val
+    if is_word_head_exp(other) and 2**24 <= val < 2**32:
+        # error namespace first; lookup_error also returns function signatures
+        return try_fname(val, add_color, "error") or "0x%08x" % val
+    return None
+
+
+def pretty_memory(exp, add_color=False, selector_kind="function"):
+    """Elements of a memory blob; `selector_kind` is the namespace of the
+    selector a leading 4-byte word stands for ("error" in revert payloads)."""
     if exp is None:
         return tuple()
 
@@ -1549,40 +1799,43 @@ def pretty_memory(exp, add_color=False):
             #
             # example: 0xd883209C4DCd497f24633C627a4E451013424841, sendFoods function
             v = exp[0][4] >> 224
-            res.append(pretty_fname(v, add_color))
+            res.append(pretty_fname(v, add_color, kind=selector_kind))
             idx += 1
             continue
 
         el = exp[idx]
+        head = payload_selector(el) if idx == 0 else None
 
-        # detect a potential string
+        if head is not None:
+            name = None
+            if selector_kind == "error":
+                # selector of a revert payload (Error(string), Panic, custom)
+                name = try_fname(head, add_color, "error")
+            elif head >= 2**24:
+                # head of an encoded call (abi.encodeWithSelector); smaller
+                # 4-byte values are packed integers (abi.encodePacked(uint32))
+                name = try_fname(head, add_color, selector_kind)
+            if name:
+                res.append(name)
+                idx += 1
+                continue
 
+        # detect a potential string: the ABI offset 32, the length, the bytes
         out_str = None
-
-        if unmask(el) == 32 and len(exp) > idx + 1:
+        if unmask(el) == 32 and len(exp) > idx + 2 and type(unmask(exp[idx + 1])) == int:
             length = unmask(exp[idx + 1])
-            if type(length) == int:
-                byte_length = ((length - 1) >> 5) + 1
-                out_str = ""
-
-                if type(length) == int and len(exp) > idx + 1 + byte_length:
-                    for i in range(byte_length):
-                        if type(unmask(exp[idx + 2 + i])) == str:
-                            out_str += unmask(exp[idx + 2 + i])[1:-1]
-                        elif type(pretty_bignum(unmask(exp[idx + 2 + i]))) == str:
-                            # could also make sure that the length of string is the same
-                            # as expected
-                            out_str += pretty_bignum(unmask(exp[idx + 2 + i]))[1:-1]
-                        else:
-                            out_str = None
-                            break
-
-                    if out_str != None:
-                        idx = idx + 1 + byte_length
-                else:
-                    out_str = None
-            else:
-                out_str = None
+            raw, end = b"", idx + 2
+            while len(raw) < length and end < len(exp):
+                part = _constant_bytes(exp[end])
+                if part is None:
+                    break
+                raw += part
+                end += 1
+            if len(raw) >= length and end > idx + 2:
+                text = raw[:length].decode("latin-1")
+                if all(ch in string.printable for ch in text):
+                    out_str = text
+                    idx = end - 1
 
         if out_str != None:
             res.append("'" + out_str + "'")

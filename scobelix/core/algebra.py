@@ -30,16 +30,18 @@ class CannotCompare(Exception):
     pass
 
 
-# copied from other modules, need to rework module structures
-# to avoid circular dependencies
-def mask_to_int(size, offset):
-    if offset < 0:
-        size = size + offset
-        if size < 1:
-            return 0
-        return 2**size - 1
+_WORD = 2**256
+_MINUS_WORD = -(2**256)
 
-    return (2**size - 1) * (2**offset)
+
+def _word(num):
+    """A folded constant as an EVM word: reduced modulo 2**256 when it is
+    outside (-2**256, 2**256), the range of the int convention (a negative
+    int is a two's complement word). A wider int would read as a byte
+    string (copied code) in apply_mask."""
+    if type(num) == int and not _MINUS_WORD < num < _WORD:
+        return num % _WORD
+    return num
 
 
 @cached
@@ -255,7 +257,7 @@ def add_op(*args):
         else:
             break
     else:
-        return real
+        return _word(real)
     # / speed
 
     res = flatten_adds(list(args))
@@ -288,7 +290,12 @@ def add_op(*args):
 
                 elif m := match(tried, ("mask_shl", ":int:size", 0, ":osize", ":val")):
                     assert m.osize == 256 - m.size
-                    symbolic[idx] = ("mul", 2**m.osize, m.val)
+                    if 0 <= m.osize < 256:
+                        # val << osize, the size fits the rest of the word
+                        symbolic[idx] = ("mul", 2**m.osize, m.val)
+                    else:
+                        # a right shift (or none): the term is the mask
+                        symbolic[idx] = ("mul", 1, tried)
 
                 else:
                     m = match(tried, ("add", ":int:num", ":term"))
@@ -309,11 +316,13 @@ def add_op(*args):
         for s in symbolic
     )
 
+    if real > 0:
+        real = real % (2**256)
+    real = _word(real)
+
     if real == 0:
         res = symbolic
     else:
-        if real > 0:
-            real = real % (2**256)
         res = (real,) + symbolic
 
     if len(res) == 0:
@@ -335,7 +344,7 @@ def mul_op(*args):
         return args[0]
 
     if match(args, (int, int)):
-        return args[0] * args[1]
+        return _word(args[0] * args[1])
 
     for a in args:
         assert type(a) != list
@@ -387,6 +396,7 @@ def mul_op(*args):
 
     assert len(symbolic) == 0 or symbolic[0] != "mul"  # some old bug
 
+    real = _word(real)
     if len(symbolic) == 0:
         return real
     else:
@@ -702,7 +712,7 @@ def _max_op(base, what):
 
     res.append(what)
 
-    res = tuple(set(res))
+    res = tuple(dict.fromkeys(res))  # without duplicates, in a fixed order (not the hash order)
     if len(res) > 1:
         return ("max",) + res
     return res[0]
@@ -1003,30 +1013,58 @@ def apply_mask_to_storage(exp, size, offset, shl):
 
     res = ("storage", stor_size, stor_offset, stor_idx)
 
-    shr = 0
-
     if shl == 0:
         return res
-    else:
-        if (m := match(res, ("storage", size, 0, ":stor_idx"))) and offset == 0:
-            stor_idx = m.stor_idx
-            shr = minus_op(shl)
-            return ("storage", size, shr, stor_idx)
+    elif match(res, ("storage", size, 0, Any)) and type(shl) == int:
+        # the low `size` bits of the slot, moved
+        if shl > 0:
+            # up (a bytesN field read left-aligned): the field, then the
+            # shift (a negative offset would stand for bits of the slot below)
+            return ("mask_shl", size, 0, shl, res)
+        if type(size) == int:
+            # down: the bits of the field from -shl on
+            return ("storage", size + shl, -shl, stor_idx) if size + shl > 0 else 0
 
 
 def apply_mask(val, size, offset=0, shl=0):
+    """
+    (val & ((2**size - 1) << offset)) << shl, a negative shl shifting right.
+    `val` is a word (a negative int is its two's complement) and so is the
+    result, modulo 2**256; ints wider than a word are copied code, sliced
+    without truncation.
+    """
     assert all_concrete(val, size, offset, shl)
 
-    mask = mask_to_int(size, offset)
-    val = val & mask
+    word = val < 2**256
+    if val < 0:
+        val %= 2**256
 
-    if shl > 0:
-        val = val << shl
+    # Sizes, offsets and shifts come from the code: only the bits `val` can
+    # have matter, so they are clamped to its width before any power of two
+    # is built (2**size with a hostile size would allocate gigabytes).
+    width = max(256, val.bit_length())
+    if offset < 0:
+        # (2**size - 1) >> -offset: the low size + offset bits
+        size, offset = size + offset, 0
+    if size <= 0 or offset >= width:
+        return 0
+    size = min(size, width - offset)
 
-    if shl < 0:
-        val = val >> -shl
+    # the field, moved down to bit 0, then to its place: offset + shl
+    val = (val >> offset) & ((1 << size) - 1)
+    shift = offset + shl
 
-    return val
+    if shift < 0:
+        return val >> -shift if -shift < size else 0
+
+    if word:
+        return (val << shift) % 2**256 if shift < 256 else 0
+
+    if shift > width + 256:
+        # past every bit a word or the copied code has: nothing is left
+        # (bounds the size of the int a hostile shift could build)
+        return 0
+    return val << shift
 
 
 def try_add(self, other):
@@ -1036,32 +1074,20 @@ def try_add(self, other):
     return __try_add(self, other)
 
 
+def _unshift(term):
+    """
+    num * mask_shl(size, off, shl, v) with shl > 0 as num * 2**shl *
+    mask_shl(size + shl, off, 0, v): the shifted-out bits are the same
+    modulo 2**256 only when the mask reaches bit 256 (off + size + shl >= 256).
+    """
+    m = match(term, ("mul", ":num", ("mask_shl", ":int:size", ":int:off", ":int:shl", ":val")))
+    if m and type(m.num) == int and 0 < m.shl < 256 and m.off + m.size + m.shl >= 256:
+        return ("mul", m.num * 2**m.shl, ("mask_shl", m.size + m.shl, m.off, 0, m.val))
+    return term
+
+
 def __try_add(self, other):
-    if (
-        m := match(
-            self,
-            ("mul", ":num", ("mask_shl", ":int:size", ":int:off", ":int:shl", ":val")),
-        )
-    ) and m.shl > 0:
-        self = (
-            "mul",
-            m.num + 2**m.shl,
-            ("mask_shl", m.size + m.shl, m.off, 0, m.val),
-        )
-
-    if (
-        m := match(
-            other,
-            ("mul", ":num", ("mask_shl", ":int:size", ":int:off", ":int:shl", ":val")),
-        )
-    ) and m.shl > 0:
-        other = (
-            "mul",
-            m.num + 2**m.shl,
-            ("mask_shl", m.size + m.shl, m.off, 0, m.val),
-        )
-
-    return _try_add(self, other)
+    return _try_add(_unshift(self), _unshift(other))
 
 
 def _try_add(self, other):
@@ -1082,9 +1108,10 @@ def _try_add(self, other):
             )
         )
         and mo.other_size == 256 - mo.shl
+        and 0 <= mo.shl < 256
     ):
-        mo.mul *= 2**mo.shl - 1
-        return mul_op(mo.mul, ms.val)
+        # -v + k * (v << s) == (k * 2**s - 1) * v
+        return mul_op(mo.mul * 2**mo.shl - 1, ms.val)
 
     #    if self, other == mul(x, exp), mul(y, exp)
     #                   => mul(x+y, exp)
@@ -1120,7 +1147,9 @@ def _try_add(self, other):
 
     #   if self, other == mul(x, mask_shl(256-y, y, 0, ADD(2**y - 1, mul(1, exp)))),
     #                     mul(-x, exp)
-    #                  => mul(x, 2**y - mask_op(exp, size=y))
+    #                  => mul(x, mask_op(-exp, size=y))
+    #   (round up to a multiple of 2**y, minus the value: (-exp) mod 2**y,
+    #   0 when exp is a multiple, also when the addition wraps)
 
     """
     to be tested:
@@ -1145,7 +1174,7 @@ def _try_add(self, other):
                 ("add", 2**y - 1, ("mul", 1, x)),
             )  # - x #== 2**y-1 - Mask(y,0,0, x)
             if self[2] == m:
-                return mul_op(self[1], sub_op(2**y, mask_op(x, size=y)))
+                return mul_op(self[1], mask_op(minus_op(x), size=y))
 
     #   if self, other == mul(-x, mask_shl(256-y, y, 0, exp),
     #                     mul(x, exp)
@@ -1159,12 +1188,6 @@ def _try_add(self, other):
         x = other[2]
         for y in [3, 4, 5, 6, 7, 8, 16, 32, 64, 128]:
             m = ("mask_shl", 256 - y, y, 0, x)  # - x #== 2**y-1 - Mask(y,0,0, x)
-            if self[2] == m:
-                return mul_op(other[1], mask_op(x, size=y))
-            m = ("mask_shl", 251 - y, y, 0, x)  # close enough ;)
-            # happens in memcopy loops, shouldn't cause significant bugs
-            # and helps clean up the code a lot
-
             if self[2] == m:
                 return mul_op(other[1], mask_op(x, size=y))
 
@@ -1195,7 +1218,8 @@ def _try_add(self, other):
         and (mo := match(exp2, ("mask_shl", ":int:size2", 0, 0, ms.x)))
         and mo.size2 < ms.size1
     ):
-        return ("mul", num1, ("mask_shl", ms.size1 - mo.size2, 0, 0, ms.x))
+        # bits [size2, size1) of x
+        return ("mul", num1, ("mask_shl", ms.size1 - mo.size2, mo.size2, 0, ms.x))
 
     return None
 
