@@ -28,19 +28,39 @@ jobs:
           # web3==6.0.0-beta.8 needs the legacy pkg_resources API, which
           # setuptools>=81 no longer ships.
           python -m pip install "setuptools<81"
-          python -m pip install -e .
+          # the `verify` extra brings the EVM backends (pyrevm, py-evm) that
+          # scobelix.verify's differential execution (L3) runs on
+          python -m pip install -e ".[verify]"
           python -m pip install pytest flake8 solc-select
 
-      - name: Install solc 0.8.19
-        # used by tests/test_solgen.py to confirm generated Solidity
-        # actually compiles, not just "looks" valid; skipped automatically
-        # by that test if solc isn't on PATH.
+      - name: Install the solc releases the tests compile with
+        # the solgen and verify tests compile the generated Solidity and
+        # execute it against the original bytecode; scobelix.verify.solc
+        # finds the binaries under ~/.solc-select/artifacts. 0.8.19 is the
+        # compiler of most fixtures and probes; 0.8.31 (transient storage,
+        # the IR pipeline of a recent release) and the pre-0.8 releases
+        # (0.7.6, 0.6.12, 0.5.17, 0.4.26: older ABI coders and dispatchers)
+        # build the other fixtures and probes. A test that needs a version
+        # that is not installed skips itself.
         run: |
-          solc-select install 0.8.19
+          solc-select install 0.8.19 0.8.31 0.7.6 0.6.12 0.5.17 0.4.26
           solc-select use 0.8.19
+
+      - name: Build the signature database
+        # built once from scobelix/data into ~/.cache/scobelix (30-100 s); the
+        # tests then open it read-only instead of one of them paying the
+        # build. A build error fails this step (the decompiler itself would
+        # only go on without names, and name-checking tests would fail later)
+        run: python -c "from scobelix.utils import sigdb; print(sigdb.ensure_built(sigdb.default_path()))"
 
       - name: Run tests
         run: python -m pytest tests/ -v
+
+      - name: Run slow tests
+        # long differential-execution runs (marked `slow`, excluded from the
+        # default run): the other builds of the fixtures and probes, the
+        # full operator and compiler grids
+        run: python -m pytest tests/ -v -m slow
 
       - name: Lint (report only - not a merge gate yet)
         # The inherited decompiler engine (scobelix/) has ~14k lines of

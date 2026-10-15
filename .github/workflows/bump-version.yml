@@ -71,9 +71,9 @@ jobs:
 
       - name: Tag the new version
         # pyproject.toml reste la source de vérité (Poetry en dépend) ; ce tag
-        # marque juste le commit correspondant à cette version, pour que
-        # process.py::_version() côté tarkastus_server (qui lit `git describe
-        # --tags`) reflète la bonne version sans attendre un tag manuel.
+        # marque juste le commit correspondant à cette version, pour que les
+        # outils qui lisent `git describe --tags` voient la bonne version sans
+        # attendre un tag manuel.
         run: |
           NEW_VERSION=$(grep -m1 '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')
           git tag "v${NEW_VERSION}"
