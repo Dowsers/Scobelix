@@ -25,51 +25,68 @@ class NoMatch(ValueError):
         self.pattern = pattern
 
 
-def _match_helper(expression, pattern, match):
-    if pattern is Any:
-        return
+# ":name" / ":type:name" pattern strings -> (type or None, name)
+_CAPTURES = {}
 
-    if isinstance(pattern, (list, tuple)):
-        if not isinstance(expression, (list, tuple)):
-            raise NoMatch(expression, pattern)
-        while True:
-            if len(pattern) == 0 and len(expression) == 0:
-                return
-            if len(pattern) > 0 and len(expression) == 0:
-                if pattern[0] is Ellipsis:
-                    return
-                else:
-                    raise NoMatch(expression, pattern)
-            if len(pattern) == 0 and len(expression) > 0:
-                raise NoMatch(expression, pattern)
-            if pattern[0] is Ellipsis:
-                return
-            _match_helper(expression[0], pattern[0], match)
-            expression = expression[1:]
-            pattern = pattern[1:]
 
-    if isinstance(pattern, str) and pattern.startswith(":"):
+def _capture(pattern):
+    spec = _CAPTURES.get(pattern)
+    if spec is None:
         attr = pattern[1:]
         if ":" in attr:
             type_name, attr = attr.split(":")
-            if not isinstance(expression, getattr(builtins, type_name)):
-                raise NoMatch(expression, pattern)
-        if hasattr(match, attr):
-            if getattr(match, attr) == expression:
-                return
-            else:
-                raise NoMatch(expression, pattern)
-        setattr(match, attr, expression)
-        return
+            spec = (getattr(builtins, type_name), attr)
+        else:
+            spec = (None, attr)
+        _CAPTURES[pattern] = spec
+    return spec
+
+
+def _matches(expression, pattern, bindings):
+    """
+    Whether `expression` matches `pattern`, the captures going to the dict
+    `bindings`. (The decompiler spends much of its time here: no exceptions,
+    no slicing of the sequences, no attribute lookups that fail.)
+    """
+    if pattern is Any:
+        return True
+
+    if isinstance(pattern, (list, tuple)):
+        if not isinstance(expression, (list, tuple)):
+            return False
+        n, k = len(pattern), len(expression)
+        i = 0
+        while True:
+            if i == n:
+                return i == k  # both done; or more expression than pattern
+            if pattern[i] is Ellipsis:
+                return True  # the rest of the expression, possibly nothing
+            if i == k:
+                return False
+            if not _matches(expression[i], pattern[i], bindings):
+                return False
+            i += 1
+
+    if isinstance(pattern, str) and pattern.startswith(":"):
+        typ, attr = _capture(pattern)
+        if typ is not None and not isinstance(expression, typ):
+            return False
+        if attr in bindings:
+            return bindings[attr] == expression
+        bindings[attr] = expression
+        return True
 
     if isinstance(pattern, type):
-        if isinstance(expression, pattern):
-            return
-        else:
-            raise NoMatch(expression, pattern)
+        return isinstance(expression, pattern)
 
-    if expression != pattern:
+    return not (expression != pattern)
+
+
+def _match_helper(expression, pattern, match):
+    bindings = dict(match.__dict__)
+    if not _matches(expression, pattern, bindings):
         raise NoMatch(expression, pattern)
+    match.__dict__.update(bindings)
 
 
 def match(expression, pattern):
@@ -103,18 +120,11 @@ def match(expression, pattern):
     >>> match(("one", "two", 3, 4), (str, ':str:two', ...)).two
     'two'
     """
-    m = Match()
-    try:
-        _match_helper(expression, pattern, m)
-    except NoMatch as e:
-        logger.debug(
-            "match(%r, %r) failed to match %r with %r",
-            expression,
-            pattern,
-            e.expression,
-            e.pattern,
-        )
+    bindings = {}
+    if not _matches(expression, pattern, bindings):
         return None
+    m = Match()
+    m.__dict__.update(bindings)
     return m
 
 
@@ -138,10 +148,11 @@ def replace(expression, pattern, replacement):
     >>> replace((1, ()), (':a', (':a', ...)), ':a')
     (1, ())
     """
-    m = Match()
-    try:
-        _match_helper(expression, pattern, m)
-    except NoMatch:
+    bindings = {}
+    if _matches(expression, pattern, bindings):
+        m = Match()
+        m.__dict__.update(bindings)
+    else:
         if isinstance(expression, list):
             return [replace(i, pattern, replacement) for i in expression]
         if isinstance(expression, tuple):

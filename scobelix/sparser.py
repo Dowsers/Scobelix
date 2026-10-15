@@ -1,3 +1,4 @@
+import bisect
 import logging
 
 from scobelix.core.algebra import divisible_bytes, minus_op, safe_le_op, to_bytes
@@ -112,20 +113,24 @@ def get_name(exp):
 
 
 def find_stores(exp):
+    """The storage accesses of `exp` (reads, and the slots of writes), each
+    once, in the order of their first occurrence (not the hash order: the
+    output must not depend on PYTHONHASHSEED)."""
+    found = {}
+    _find_stores(exp, found)
+    return list(found)
+
+
+def _find_stores(exp, found):
     if m := match(exp, ("store", ":size", ":off", ":idx", ":val")):
-        res = {("storage", m.size, m.off, m.idx)}
+        found[("storage", m.size, m.off, m.idx)] = True
 
     elif opcode(exp) == "storage":
-        res = {exp}
-
-    else:
-        res = set()
+        found[exp] = True
 
     if type(exp) == tuple or type(exp) == list:
         for e in exp:
-            res = res.union(find_stores(e))
-
-    return res
+            _find_stores(e, found)
 
 
 """
@@ -143,7 +148,8 @@ def rewrite_functions(functions):
 
     """
 
-    storages = list(find_stores([f.trace for f in functions]))
+    storages = find_stores([f.trace for f in functions])
+    used_locs.clear()  # the names given so far belong to the previous contract
 
     # (storage 256 0 (sha3 (cd 4) 7)
     # -> (storage 256 0 (array (cd 4) (loc 7)))
@@ -169,16 +175,15 @@ def rewrite_functions(functions):
         d = dest
         loc = get_loc(d)
         if loc is None:
-            loc = 99
+            continue  # an access whose slot could not be resolved: no definition
 
-        assert loc is not None, d
         if loc not in stordefs:
-            stordefs[loc] = set()
+            stordefs[loc] = {}  # an ordered set: get_type takes the first struct match
 
         if type(loc) != int:
             continue
 
-        stordefs[loc].add(d)
+        stordefs[loc][d] = True
 
     def get_type(stordefs):
         sizes = set()
@@ -226,6 +231,8 @@ def rewrite_functions(functions):
             return sorted(it, key=str)
 
     for loc in sort(stordefs.keys()):
+        # the first access through a mapping or an array gives the slot's
+        # definition; plain accesses of the slot itself are skipped
         for l in sort(stordefs[loc]):
             if match(l, ("stor", int, int, ("loc", Any))) or match(
                 l, ("stor", int, int, ("name", ...))
@@ -242,10 +249,10 @@ def rewrite_functions(functions):
                     defs.append(
                         ("def", name, loc, ("mapping", get_type(stordefs[loc])))
                     )
+                    break
                 elif opcode(idx) in ("array", "length"):
                     defs.append(("def", name, loc, ("array", get_type(stordefs[loc]))))
-
-            break
+                    break
 
         # This is executed if we didn't add any defs in the loop above.
         else:
@@ -286,7 +293,8 @@ def repl_stor(exp, assoc):
 
     if opcode(exp) == "store":
         _, size, off, idx, val = exp
-        dest = assoc[("storage", size, off, idx)]
+        # an access the storage parser could not resolve keeps its raw index
+        dest = assoc.get(("storage", size, off, idx), ("stor", size, off, idx))
         return ("store",) + dest[1:] + (repl_stor(val, assoc),)
 
     elif hashable(exp) and exp in assoc:
@@ -310,9 +318,18 @@ def replace_names_in_assoc_bool(names, storages_assoc):
     #
     # there are better/more precise ways to handle this though
     for getter, name in names.items():
-        if not (m := match(getter, ("bool", ("storage", ":size", ":off", ":int:loc")))):
+        if not (m := match(getter, ("bool", ("storage", ":size", ":off", ":loc")))):
             continue
         size, off, loc = m.size, m.off, m.loc
+
+        if type(loc) != int:
+            # a bool read through a mapping or an array (isAdmin(address)):
+            # the name goes to the slot the access resolves to
+            stor_id = storages_assoc.get(getter[1])
+            if stor_id is not None and get_loc(stor_id) is not None:
+                if ("array", get_loc(stor_id)) not in used_locs:
+                    _name_composite(stor_id, name, storages_assoc)
+            continue
 
         if ("array", loc) in used_locs:
             pass
@@ -323,6 +340,23 @@ def replace_names_in_assoc_bool(names, storages_assoc):
                 #                print(pattern)
                 if pattern == ("stor", size, off, ("loc", loc)):
                     storages_assoc[src] = ("stor", size, off, ("name", name, loc))
+
+
+def _name_composite(stor_id, name, storages_assoc):
+    """Name the mapping / array / struct slot that `stor_id` resolves to,
+    in every access of that slot."""
+    # for arrays, we don't want 'address' at the end of the name. looks better
+    new_name = name.split("Address")[0]
+    if len(new_name) > 0:
+        name = new_name
+
+    loc_id = get_loc(stor_id)
+    used_locs.add(("array", loc_id))
+
+    for src, pattern in storages_assoc.items():
+        if get_loc(pattern) == loc_id:
+            pattern = replace(pattern, ("loc", loc_id), ("name", name, loc_id))
+            storages_assoc[src] = pattern
 
 
 def replace_names_in_assoc(names, storages_assoc):
@@ -353,22 +387,11 @@ def replace_names_in_assoc(names, storages_assoc):
                         storages_assoc[src] = ("stor", size, off, ("name", name, num))
 
         elif (
-            (m := match(stor_id, ("stor", Any, Any, ("map", Any, ":loc"))))
-            or (m := match(stor_id, ("stor", Any, Any, ("array", Any, ":loc"))))
-            or (m := match(stor_id, ("struct", ":loc")))
+            match(stor_id, ("stor", Any, Any, ("map", Any, ":loc")))
+            or match(stor_id, ("stor", Any, Any, ("array", Any, ":loc")))
+            or match(stor_id, ("struct", ":loc"))
         ):
-            # for arrays, we don't want 'address' at the end of the name. looks better
-            new_name = name.split("Address")[0]
-            if len(new_name) > 0:
-                name = new_name
-
-            loc_id = get_loc(m.loc)
-            used_locs.add(("array", loc_id))
-
-            for src, pattern in storages_assoc.items():
-                if get_loc(pattern) == loc_id:
-                    pattern = replace(pattern, ("loc", loc_id), ("name", name, loc_id))
-                    storages_assoc[src] = pattern
+            _name_composite(stor_id, name, storages_assoc)
 
         else:
             logger.warning("storage pattern not found")
@@ -529,6 +552,17 @@ def _sparser(orig_storages):
     def simplify_sha3(e):
         e = rainbow_sha3(e)
 
+        if opcode(e) == "add" and any(opcode(t) == "add" for t in e[1:]):
+            # a folded keccak(slot) + k inside a sum: one flat sum, constant first
+            terms = []
+            for t in e[1:]:
+                terms.extend(t[1:] if opcode(t) == "add" else (t,))
+            const = sum(t for t in terms if type(t) == int)
+            rest = [t for t in terms if type(t) != int]
+            e = ("add",) + ((const,) if const or not rest else ()) + tuple(rest)
+            if len(e) == 2:
+                e = e[1]
+
         if match(e, ("sha3", ("data", ...))):
             terms = e[1][1:]  # "..."
             e = ("sha3",) + tuple(terms)
@@ -560,7 +594,8 @@ def _sparser(orig_storages):
                     ":idx",
                 ),
             )
-        ) and m.size == 2**m.o_shl:
+        ) and type(m.o_shl) == int and 0 <= m.o_shl < 256 and m.size == 2**m.o_shl:
+            # (a shift within a word: 2**o_shl stays small)
             size, o_size, o_off, o_shl, arr_idx, idx = (
                 m.size,
                 m.o_size,
@@ -641,7 +676,7 @@ def _sparser(orig_storages):
             if m := match(idx, ("add", ":int:loc", ":pos")):
                 s = ("stor", size, offset, ("array", m.pos, ("loc", m.loc)))
             else:
-                logger.warning(f"Weird storage index, {idx}")
+                logger.warning("Weird storage index, %s", idx)
 
         res.append(s)
 
@@ -788,16 +823,56 @@ def _sparser(orig_storages):
 ... """
 
 
-def rainbow_sha3(exp):
-    if type(exp) == int and len(hex(exp)) > 40:
-        for src, dest in sha3_loc_table.items():
-            if hex(exp) in src:
-                # sometimes the last bytes of exp are cut off (e.g. in ED), that's why
-                # we're not doing exact matches. should check why they are cut off though
-                # perhaps there's some problem with mask processing in whiles
-                return dest
+KECCAK_SLOTS = 4096  # slots whose keccak the optimizer may fold into a constant
+KECCAK_SPAN = 2**24  # largest member or element offset recognised around one
 
-    return exp
+_keccak_slot_table = None
+
+
+def _keccak_slots():
+    """Sorted (keccak(slot), slot) for the slots below KECCAK_SLOTS: the
+    bases of their dynamic arrays and strings. Built on first use; without a
+    keccak implementation, the entries of sha3_loc_table."""
+    global _keccak_slot_table
+    if _keccak_slot_table is None:
+        try:
+            from eth_hash.auto import keccak
+        except ImportError:  # pragma: no cover - depends on the environment
+            keccak = None
+        rows = []
+        if keccak is not None:
+            for slot in range(KECCAK_SLOTS):
+                digest = keccak(slot.to_bytes(32, "big"))
+                rows.append((int.from_bytes(digest, "big"), slot))
+        else:
+            for src, dest in sha3_loc_table.items():
+                if m := match(dest, ("loc", ":int:slot")):
+                    rows.append((int(src, 16), m.slot))
+        rows.sort()
+        _keccak_slot_table = (rows, [h for h, _ in rows])
+    return _keccak_slot_table
+
+
+def rainbow_sha3(exp):
+    """
+    A constant the optimizer folded from keccak(slot) + k (the element or
+    member k of the dynamic array or string at `slot`, k possibly -1 for a
+    pop) becomes ("loc", slot) or ("add", k, ("loc", slot)); the mapping
+    bases of sha3_loc_table are also recognised. Other values are kept.
+    """
+    if type(exp) != int or exp < 2**64:
+        return exp
+
+    rows, hashes = _keccak_slots()
+    j = bisect.bisect_right(hashes, exp) - 1
+    for cand in (j, j + 1):  # the hash just below exp (k >= 0), just above (k < 0)
+        if 0 <= cand < len(rows):
+            h, slot = rows[cand]
+            k = exp - h
+            if -KECCAK_SPAN < k < KECCAK_SPAN:
+                return ("loc", slot) if k == 0 else ("add", k, ("loc", slot))
+
+    return sha3_loc_values.get(exp, exp)
 
 
 sha3_loc_table = {
@@ -1025,3 +1100,6 @@ sha3_loc_table = {
         ("loc", 19),
     ),
 }
+
+# the same table keyed by value
+sha3_loc_values = {int(src, 16): dest for src, dest in sha3_loc_table.items()}
