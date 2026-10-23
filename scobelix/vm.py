@@ -131,6 +131,17 @@ class Node:
         # instead of a proper str
         return self.__str__()
 
+    # A node left in a trace is an identity marker (its text is Node(jd)):
+    # the execution graph behind it (the prev chain back to the root, the
+    # VM, the loader) is never copied with the trace. Copying it recursed
+    # once per node of the chain and took down the functions whose chains
+    # were long (RecursionError in Function.__init__).
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
     def __init__(self, vm, start, safe, stack, condition=True, trace=None):
         global node_count
 
