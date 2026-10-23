@@ -1,22 +1,22 @@
 # Matrice de couverture des exigences
 
-Cette matrice recense, en une seule vue, les 476 exigences fonctionnelles du répertoire `docs/`, réparties en 8 domaines d'un préfixe chacun, et leur point d'implémentation dans le code. Elle est dérivée mécaniquement des documents de traçabilité détaillés du présent répertoire : pour chaque exigence, l'objet abrégé et la colonne « Fichier — Fonction/élément » de sa ligne de traçabilité, sans retouche. Pour l'énoncé complet, se reporter au document fonctionnel ; pour l'explication du mécanisme (pas seulement sa localisation), au document de traçabilité correspondant.
+Cette matrice recense, en une seule vue, les 482 exigences fonctionnelles du répertoire `docs/`, réparties en 8 domaines d'un préfixe chacun, et leur point d'implémentation dans le code. Elle est dérivée mécaniquement des documents de traçabilité détaillés du présent répertoire : pour chaque exigence, l'objet abrégé et la colonne « Fichier — Fonction/élément » de sa ligne de traçabilité, sans retouche. Pour l'énoncé complet, se reporter au document fonctionnel ; pour l'explication du mécanisme (pas seulement sa localisation), au document de traçabilité correspondant.
 
 ## Synthèse
 
 | Domaine | Préfixe | Exigences | Document de traçabilité |
 |---|---|---|---|
-| Architecture et interfaces d'appel de Scobelix | `FR-ARCH` | 77 | [architecture.md](architecture.md) |
+| Architecture et interfaces d'appel de Scobelix | `FR-ARCH` | 81 | [architecture.md](architecture.md) |
 | Reconstruction Solidity (solgen) et validation par compilation | `FR-SOL` | 73 | [generation-solidity.md](generation-solidity.md) |
 | Intégration de Scobelix dans son environnement | `FR-INT` | 38 | [integration.md](integration.md) |
 | Pipeline de décompilation : désassemblage, exécution symbolique, structuration et simplification | `FR-DEC` | 108 | [pipeline-decompilation.md](pipeline-decompilation.md) |
 | Reconstruction des fonctions, des paramètres et de la structure du stockage | `FR-STOR` | 41 | [reconstruction-fonctions-stockage.md](reconstruction-fonctions-stockage.md) |
 | Résolution des signatures et régénération de la base locale | `FR-SIG` | 46 | [resolution-signatures.md](resolution-signatures.md) |
-| Sorties produites par Scobelix | `FR-SOR` | 63 | [sorties.md](sorties.md) |
+| Sorties produites par Scobelix | `FR-SOR` | 65 | [sorties.md](sorties.md) |
 | Spécification de paramétrage des bases de signatures de Scobelix | `FR-PARAM` | 30 | [parametrage-signatures.md](parametrage-signatures.md) |
-| **Total** | | **476** | |
+| **Total** | | **482** | |
 
-**476/476 exigences couvertes** — chaque identifiant défini dans un document fonctionnel a sa ligne dans le document de traçabilité correspondant et ci-dessous, dans le même ordre ; vérifié mécaniquement (numérotation continue de 01 à N dans chaque préfixe, aucun manquant, aucun orphelin).
+**482/482 exigences couvertes** — chaque identifiant défini dans un document fonctionnel a sa ligne dans le document de traçabilité correspondant et ci-dessous, dans le même ordre ; vérifié mécaniquement (numérotation continue de 01 à N dans chaque préfixe, aucun manquant, aucun orphelin).
 
 ## Détail par domaine
 
@@ -31,7 +31,7 @@ Exigences détaillées dans [architecture.md](architecture.md), énoncés foncti
 | `FR-ARCH-03` | aucun accès réseau hors lecture du code d'une adresse et téléchargement autorisé du compilateur | `scobelix/loader.py` — `Loader.load_addr()` ; `scobelix/verify/solc.py` — `download_allowed()`, `download_solc()`, `available_releases()`, `_http_get()` ; `scobelix/utils/sigdb.py` |
 | `FR-ARCH-04` | bytecode runtime, bloc de métadonnées lu comme donnée, création non distinguée | `scobelix/loader.py` — `Loader.load_binary()` ; `scobelix/utils/metadata.py` — `parse_metadata()` |
 | `FR-ARCH-05` | en-tête hérité `# Palkeoramix decompiler. ` | `scobelix/decompiler.py` — `_decompile_with_loader()` |
-| `FR-ARCH-06` | résultat en huit parties | `scobelix/decompiler.py` — classe `Decompilation` |
+| `FR-ARCH-06` | résultat en neuf parties | `scobelix/decompiler.py` — classe `Decompilation` |
 | `FR-ARCH-07` | décompilation d'un bytecode hexadécimal, entrée invalide refusée | `scobelix/decompiler.py` — `decompile_bytecode()` ; `scobelix/loader.py` — `parse_hex_code()`, `InvalidBytecode`, `Loader.load_binary()` |
 | `FR-ARCH-08` | décompilation d'une adresse | `scobelix/decompiler.py` — `decompile_address()` ; `scobelix/loader.py` — `Loader.load_addr()` |
 | `FR-ARCH-09` | filtre par préfixe de nom, fonctions ignorées hors échecs | `scobelix/decompiler.py` — `_decompile_with_loader()` ; `scobelix/loader.py` — `Loader.run()` |
@@ -39,26 +39,30 @@ Exigences détaillées dans [architecture.md](architecture.md), énoncés foncti
 | `FR-ARCH-11` | validation par un compilateur externe, statuts, pipeline IR | `scobelix/solgen/validate.py` — `validate_solidity()`, `ValidationResult` |
 | `FR-ARCH-12` | capacité de vérification L0 à L4 | `scobelix/verify/core.py` — `verify()` ; `scobelix/verify/__init__.py` |
 | `FR-ARCH-13` | outil satellite de régénération des signatures | `scobelix/tools/build_local_sigs.py` — `main()` |
-| `FR-ARCH-14` | bytecode vide ou réduit aux métadonnées, résultat « aucun code » | `scobelix/decompiler.py` — `_decompile_with_loader()` |
+| `FR-ARCH-14` | bytecode vide ou réduit aux métadonnées, résultat « aucun code », état du budget global transmis | `scobelix/decompiler.py` — `_decompile_with_loader()` |
 | `FR-ARCH-15` | ordre des étapes | `scobelix/decompiler.py` — `_decompile_with_loader()` ; `scobelix/loader.py` — `Loader.load_binary()`, `Loader.run()` ; `scobelix/contract.py` — `Contract.postprocess()` |
 | `FR-ARCH-16` | décompilation indépendante, échec isolé et journalisé | `scobelix/decompiler.py` — `_decompile_with_loader()` |
 | `FR-ARCH-17` | reconstruction du stockage une seule fois pour le contrat | `scobelix/contract.py` — `Contract.postprocess()` |
 | `FR-ARCH-18` | slots de proxy détectés sur le seul désassemblage brut | `scobelix/decompiler.py` — `_decompile_with_loader()` ; `scobelix/utils/proxy_detect.py` — `detect_proxy_slots()` |
 | `FR-ARCH-19` | AST et texte dans la même passe, AST non plié, texte plié | `scobelix/function.py` — `Function.serialize()`, `Function._print()` ; `scobelix/contract.py` — `Contract.make_ast()` |
-| `FR-ARCH-20` | variables `PANORAMIX_*` lues une seule fois au chargement | `scobelix/decompiler.py` — constantes `FUNCTION_TIMEOUT`, `VM_RUN_TIMEOUT`, `WHILES_TIMEOUT` ; `scobelix/loader.py` — `LOADER_TIMEOUT` ; `scobelix/vm.py` — `MAX_NODE_COUNT` |
-| `FR-ARCH-21` | budget par fonction (720 s) couvrant exécution symbolique, structuration et simplification | `scobelix/decompiler.py` — `dec()` dans `_decompile_with_loader()` |
-| `FR-ARCH-22` | budget de l'exécution symbolique (600 s) | `scobelix/decompiler.py` — `dec()` ; `scobelix/vm.py` — `VM.run()` |
+| `FR-ARCH-20` | variables `PANORAMIX_*` lues une seule fois au chargement, `SCOBELIX_TIME_BUDGET` lue à chaque invocation de la commande | `scobelix/decompiler.py` — constantes `FUNCTION_TIMEOUT`, `VM_RUN_TIMEOUT`, `WHILES_TIMEOUT` ; `scobelix/loader.py` — `LOADER_TIMEOUT` ; `scobelix/vm.py` — `MAX_NODE_COUNT` ; `scobelix/__main__.py` — `parse_args()`, `_time_budget_from_environment()` |
+| `FR-ARCH-21` | budget par fonction (720 s) couvrant exécution symbolique, structuration et simplification, ramené par le budget global | `scobelix/decompiler.py` — `dec()` dans `_decompile_with_loader()`, `_capped()` |
+| `FR-ARCH-22` | budget de l'exécution symbolique (600 s) ; sous budget global, sa part du budget de la fonction, qui s'achève avant l'alarme de la fonction | `scobelix/decompiler.py` — `dec()`, `_vm_share()`, `_capped()`, `SIMPLIFY_RESERVE` ; `scobelix/vm.py` — `VM.run()` |
 | `FR-ARCH-23` | arrêt de la simplification à la plus proche des deux échéances, fonction exacte et marquée | `scobelix/decompiler.py` — `simplification_deadline()`, `SIMPLIFY_RESERVE`, `dec()` ; `scobelix/whiles.py` — `make_whiles()` ; `scobelix/simplify.py` — `simplify_trace()`, `last_run_timed_out` |
-| `FR-ARCH-24` | budget de la découverte (120 s) | `scobelix/loader.py` — `Loader.run()` |
-| `FR-ARCH-25` | valeur nulle = pas de limite de temps, échéance de 75 % comprise | `scobelix/vm.py` — `VM.run()` ; `scobelix/simplify.py` — `simplify_trace()` ; `scobelix/decompiler.py` — `dec()`, `simplification_deadline()` |
+| `FR-ARCH-24` | budget de la découverte (120 s), ramené par le budget global | `scobelix/loader.py` — `Loader.run()` ; `scobelix/decompiler.py` — `_decompile_with_loader()` |
+| `FR-ARCH-25` | valeur nulle = pas de limite de temps, échéance de 75 % comprise, sauf sous un budget global | `scobelix/vm.py` — `VM.run()` ; `scobelix/simplify.py` — `simplify_trace()` ; `scobelix/decompiler.py` — `dec()`, `simplification_deadline()`, `_capped()` ; `scobelix/loader.py` — `Loader.run()` |
+| `FR-ARCH-78` | budget de temps global facultatif : option, variable lue à chaque invocation, valeurs refusées, très grandes valeurs plafonnées, paramètre de l'interface Python, budget entier par entrée | `scobelix/__main__.py` — `parse_args()`, `_time_budget_from_environment()`, `TIME_BUDGET_ENV`, `_seconds()`, `print_decompilation()`, `_generate_under_budget()` ; `scobelix/decompiler.py` — `decompile_bytecode()`, `decompile_address()`, `_decompile_with_loader()`, `TimeBudget.start()`, `MAX_ALARM_SECONDS` |
+| `FR-ARCH-79` | réserve pour les étapes qui suivent les fonctions, accrue par les fonctions arrêtées à leur limite de temps ; découverte et fonctions bornées par le temps restant ; fonctions laissées de côté sous une seconde ; budget épuisé | `scobelix/decompiler.py` — classe `TimeBudget`, `BUDGET_RESERVE`, `BUDGET_RESERVE_MIN`, `TIME_LIMITED_RESERVE`, `MIN_FUNCTION_SECONDS`, `MIN_SLICE`, `_clock`, `_capped()`, `_vm_share()`, `simplification_deadline()`, `_decompile_with_loader()` ; `scobelix/loader.py` — `Loader.run()` |
+| `FR-ARCH-80` | génération et validation de la commande sous budget global : réserve de sortie, génération sautée ou interrompue, boucle de vérification arrêtée avant l'alarme, validation bornée en temps total ou sautée, fil principal | `scobelix/__main__.py` — `_generate_under_budget()`, `_validate_under_budget()`, `_generate_solidity()`, `_verification_limits()`, `_cut_by_the_budget()`, `_validate()`, `_BudgetExhausted`, `OUTPUT_RESERVE`, `SOLGEN_MIN_SECONDS`, `VERIFY_RESERVE`, `SOLGEN_SKIPPED`, `SOLGEN_INTERRUPTED`, `VALIDATION_SKIPPED` ; `scobelix/solgen/validate.py` — `validate()`, `validate_solidity()`, `DEFAULT_TIMEOUT`, `VIA_IR_NO_TIME` |
+| `FR-ARCH-81` | sortie produite même budget épuisé, écrite à la fin ; étapes que le budget ne couvre pas | `scobelix/__main__.py` — `print_decompilation()` ; `scobelix/decompiler.py` — `decompile_bytecode()`, `decompile_address()`, `_decompile_with_loader()`, `TimeBudget.start()` ; `scobelix/loader.py` — `Loader.run()` ; `scobelix/utils/signatures.py` — `make_abi()` ; `scobelix/contract.py` — `Contract.postprocess()` |
 | `FR-ARCH-26` | nombre maximal de nœuds (500 000), seuil d'élagage, valeur nulle non illimitée | `scobelix/vm.py` — `MAX_NODE_COUNT`, `VM.run()`, `VM.handle_jumps()` |
 | `FR-ARCH-27` | valeur non entière → erreur au chargement des capacités de décompilation seulement | `scobelix/decompiler.py`, `scobelix/loader.py`, `scobelix/vm.py` (conversions `int()` au niveau module) ; `scobelix/solgen/__init__.py` ; `scobelix/verify/__init__.py` |
 | `FR-ARCH-28` | `WEB3_PROVIDER_URI` non interprétée par le système | `scobelix/loader.py` — `Loader.load_addr()` |
 | `FR-ARCH-29` | `SCOBELIX_ABI_ROOTS`/`SCOBELIX_SIGS_OUT` lues par l'outil seul | `scobelix/tools/build_local_sigs.py` — `ABI_ROOTS`, `OUT_PATH` |
 | `FR-ARCH-30` | `SCOBELIX_SIGDB`, `SCOBELIX_SOLC_DIR`, `SCOBELIX_ALLOW_SOLC_DOWNLOAD` lues à l'usage | `scobelix/utils/sigdb.py` — `ENV_PATH`, `default_path()`, `_default_locations()`, `get_default()` ; `scobelix/verify/solc.py` — `DIR_ENV`, `DOWNLOAD_ENV`, `_candidate_paths()`, `_download_dir()`, `download_allowed()` |
-| `FR-ARCH-31` | constantes non configurables | `scobelix/simplify.py` — `LARGE_TRACE_THRESHOLD`, `MAX_SIMPLIFY_PASSES_LARGE`, `MAX_MEM_CLEANUP_TRACE_LEN` ; `scobelix/vm.py` — `VM.run()`, `VM.handle_jumps()` ; `scobelix/decompiler.py` — `SIMPLIFY_RESERVE` ; `scobelix/solgen/validate.py` — `validate_solidity()` ; `scobelix/solgen/contract.py` ; `scobelix/solgen/v2.py` — `DEFAULT_TARGET` ; `scobelix/solgen/tiers.py` — `SearchBudget` ; `scobelix/verify/core.py` — `Budget` ; `scobelix/verify/solc.py` — `COMPILE_CACHE_BYTES` ; `scobelix/utils/sigdb.py` — `_file_name()` |
+| `FR-ARCH-31` | constantes non configurables | `scobelix/simplify.py` — `LARGE_TRACE_THRESHOLD`, `MAX_SIMPLIFY_PASSES_LARGE`, `MAX_MEM_CLEANUP_TRACE_LEN` ; `scobelix/vm.py` — `VM.run()`, `VM.handle_jumps()` ; `scobelix/decompiler.py` — `SIMPLIFY_RESERVE`, `BUDGET_RESERVE`, `BUDGET_RESERVE_MIN`, `TIME_LIMITED_RESERVE`, `MIN_FUNCTION_SECONDS`, `MAX_ALARM_SECONDS` ; `scobelix/__main__.py` — `OUTPUT_RESERVE`, `SOLGEN_MIN_SECONDS`, `VERIFY_RESERVE` ; `scobelix/solgen/validate.py` — `validate_solidity()`, `DEFAULT_TIMEOUT` ; `scobelix/solgen/contract.py` ; `scobelix/solgen/v2.py` — `DEFAULT_TARGET` ; `scobelix/solgen/tiers.py` — `SearchBudget` ; `scobelix/verify/core.py` — `Budget` ; `scobelix/verify/solc.py` — `COMPILE_CACHE_BYTES` ; `scobelix/utils/sigdb.py` — `_file_name()` |
 | `FR-ARCH-32` | Python ≥ 3.9 et < 4 | `pyproject.toml` — clé `python` de `[tool.poetry.dependencies]` |
-| `FR-ARCH-33` | budget par signal, pas de Windows, fil principal | `scobelix/decompiler.py` — `dec()` ; `README.md` (section « Caveats ») |
+| `FR-ARCH-33` | budget par fonction et interruption de la génération par le budget global au moyen d'un signal, pas de Windows, fil principal ; budget global sans signal | `scobelix/decompiler.py` — `dec()`, classe `TimeBudget` ; `scobelix/__main__.py` — `_generate_under_budget()` ; `README.md` (sections « Installation » et « Caveats ») |
 | `FR-ARCH-34` | bibliothèque Ethereum 6.0.0-beta.8, usages limités ; keccak par eth-hash | `pyproject.toml` — dépendance `web3` ; `scobelix/loader.py` — `Loader.load_addr()` ; `scobelix/tools/build_local_sigs.py` — `compute_selector()` ; `scobelix/utils/sigdb.py` — `keccak256()` |
 | `FR-ARCH-35` | journalisation colorée et répertoire de cache standard | `scobelix/__main__.py` — `main()` ; `scobelix/utils/helpers.py` — `cache_dir()` ; `scobelix/verify/solc.py` — `_download_dir()` |
 | `FR-ARCH-36` | compilateur non déclaré, facultatif, cherché parmi les installations usuelles | `pyproject.toml` ; `scobelix/verify/solc.py` — `installed_solcs()`, `SolcNotFound` ; `scobelix/solgen/validate.py` — `validate_solidity()` ; `scobelix/solgen/storage.py` |
@@ -73,30 +77,30 @@ Exigences détaillées dans [architecture.md](architecture.md), énoncés foncti
 | `FR-ARCH-45` | le budget par fonction ne peut être absorbé | `scobelix/decompiler.py` — classe `TimeoutInterrupt` |
 | `FR-ARCH-46` | commande `scobelix` et mode module | `pyproject.toml` — `[tool.poetry.scripts]` ; `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-47` | un argument positionnel obligatoire, code 2 sinon | `scobelix/__main__.py` — `parse_args()` |
-| `FR-ARCH-48` | nature de l'argument selon sa seule longueur | `scobelix/__main__.py` — `print_decompilation()` |
-| `FR-ARCH-49` | `-` lit l'entrée standard, puis même règle de longueur | `scobelix/__main__.py` — `print_decompilation()` |
+| `FR-ARCH-48` | nature de l'argument selon sa longueur, `--bytecode` force le bytecode | `scobelix/__main__.py` — `parse_args()`, `print_decompilation()` |
+| `FR-ARCH-49` | `-` lit l'entrée standard, toujours un bytecode, avertissement pour une forme d'adresse | `scobelix/__main__.py` — `print_decompilation()`, `_ADDRESS_RE` |
 | `FR-ARCH-50` | liste séparée par des virgules, traitement successif, arrêt à la première erreur | `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-51` | option `-v`, valeur numérique ou nom défini en majuscules par la journalisation standard (dont `BASIC_FORMAT`), erreur sinon | `scobelix/__main__.py` — `main()`, `parse_args()` |
 | `FR-ARCH-52` | `--profile` écrit `scobelix.prof`, même en cas d'échec | `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-53` | `--profile` sans effet sur une liste | `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-54` | `--function`, défaut vide = toutes | `scobelix/__main__.py` — `parse_args()`, `print_decompilation()` |
-| `FR-ARCH-55` | quatre drapeaux de format, précédence stricte | `scobelix/__main__.py` — `print_decompilation()` |
-| `FR-ARCH-56` | options de génération seulement avec `--solidity` | `scobelix/__main__.py` — `print_decompilation()`, `_generate_solidity()`, `_validate()` |
-| `FR-ARCH-57` | valeurs des options de génération, refus en code 2 | `scobelix/__main__.py` — `parse_args()`, `_solc_version()`, `_seconds()`, `_generate_solidity()` |
+| `FR-ARCH-55` | quatre drapeaux de format, précédence stricte ; `--bytecode` et `--time-budget` valent pour tous les formats | `scobelix/__main__.py` — `print_decompilation()` |
+| `FR-ARCH-56` | options de génération seulement avec `--solidity` | `scobelix/__main__.py` — `print_decompilation()`, `_solgen_payload()`, `_generate_under_budget()`, `_validate_under_budget()`, `_generate_solidity()`, `_validate()` |
+| `FR-ARCH-57` | valeurs des options de génération, refus en code 2 | `scobelix/__main__.py` — `parse_args()`, `_solc_version()`, `_seconds()`, `_generate_solidity()`, `_verification_limits()` |
 | `FR-ARCH-58` | `--verbose`/`--explain` par présence littérale dans les arguments du processus | `scobelix/vm.py` — `VM.apply_stack()`, `VM.handle_jumps()` ; `scobelix/prettify.py` — `explain()`, `explain_text()` ; `scobelix/decompiler.py` — `dec()` |
 | `FR-ARCH-59` | `--explain` écrit sur la sortie standard avant la sortie principale | `scobelix/prettify.py` — `explain()`, `explain_text()` |
 | `FR-ARCH-60` | options non déclarées et abréviations ambiguës refusées, abréviations univoques acceptées | `scobelix/__main__.py` — `parse_args()` |
-| `FR-ARCH-61` | codes de sortie 0, 2 et 1 | `scobelix/__main__.py` — `main()`, `_print_verification()` |
-| `FR-ARCH-62` | deux fonctions publiques de décompilation | `scobelix/decompiler.py` — `decompile_bytecode()`, `decompile_address()` |
-| `FR-ARCH-63` | huit champs à valeurs vides par défaut | `scobelix/decompiler.py` — classe `Decompilation` |
+| `FR-ARCH-61` | codes de sortie 0, 2 et 1 ; asymétrie entre `--combined-json` et `--solidity` seul | `scobelix/__main__.py` — `main()`, `_print_verification()`, `_solgen_payload()`, `_generate_under_budget()`, `_validate_under_budget()` |
+| `FR-ARCH-62` | deux fonctions publiques de décompilation, budget de temps global en paramètre nommé | `scobelix/decompiler.py` — `decompile_bytecode()`, `decompile_address()` ; `scobelix/solgen/__init__.py` — `generate_solidity()` |
+| `FR-ARCH-63` | neuf champs à valeurs vides par défaut | `scobelix/decompiler.py` — classes `Decompilation`, `TimeBudget` |
 | `FR-ARCH-64` | `json` sérialisable ou `{}`, clés `proxy_hints`, `metadata`, `dispatcher` identiques | `scobelix/decompiler.py` — `_decompile_with_loader()` |
 | `FR-ARCH-65` | désassemblage, bytecode et fonctions exposés par l'API seulement | `scobelix/__main__.py` — `print_decompilation()` |
 | `FR-ARCH-66` | génération Solidity, paramètres nommés, résultat, erreurs de valeur | `scobelix/solgen/__init__.py` — `generate_solidity()` ; `scobelix/solgen/v2.py` — `SolgenResult`, `generate()`, `CONTRACT_NAME` |
-| `FR-ARCH-67` | deux fonctions de validation, résultat à cinq champs | `scobelix/solgen/validate.py` — `validate()`, `validate_solidity()`, classe `ValidationResult` ; `scobelix/verify/solc.py` — `solc_for_source()` |
+| `FR-ARCH-67` | deux fonctions de validation, délai facultatif (total de la validation), résultat à six champs | `scobelix/solgen/validate.py` — `validate()`, `validate_solidity()`, `DEFAULT_TIMEOUT`, classe `ValidationResult` ; `scobelix/verify/solc.py` — `solc_for_source()` |
 | `FR-ARCH-68` | fonction de vérification, machines et compilateurs disponibles | `scobelix/verify/core.py` — `verify()` ; `scobelix/verify/__init__.py` ; `scobelix/verify/evm/__init__.py` — `available_backends()` ; `scobelix/verify/solc.py` — `installed_solcs()` |
 | `FR-ARCH-69` | détection des slots de proxy exposée | `scobelix/utils/proxy_detect.py` — `detect_proxy_slots()` |
-| `FR-ARCH-70` | exceptions pour les erreurs de FR-ARCH-44, retour normal sinon | `scobelix/loader.py` — `InvalidBytecode` ; `scobelix/decompiler.py` — `_decompile_with_loader()` |
-| `FR-ARCH-71` | fil principal requis, sauf budget par fonction nul | `scobelix/decompiler.py` — `dec()` |
+| `FR-ARCH-70` | exceptions pour les erreurs de FR-ARCH-44 et pour un budget global refusé, retour normal sinon | `scobelix/loader.py` — `InvalidBytecode` ; `scobelix/decompiler.py` — `_decompile_with_loader()`, `TimeBudget.start()` |
+| `FR-ARCH-71` | fil principal requis, sauf budget par fonction nul sans budget global | `scobelix/decompiler.py` — `dec()`, `_capped()` |
 | `FR-ARCH-72` | aucune configuration de la journalisation par l'API | `scobelix/__main__.py` — `main()` ; `scobelix/matcher.py` |
 | `FR-ARCH-73` | état partagé sans moyen de réinitialisation, hors base de signatures | `scobelix/utils/sigdb.py` — `set_default()` |
 | `FR-ARCH-74` | interface publique de la base de signatures | `scobelix/utils/sigdb.py` — `lookup_function()`, `lookup_event()`, `lookup_error()`, `SigDB`, `SigDB.stats()`, `function_selector()`, `event_topic()`, `canonical_type()`, `canonical_signature()`, `default_path()`, `default_sources()`, `build()`, `ensure_built()`, `get_default()`, `set_default()` |
@@ -118,7 +122,7 @@ Exigences détaillées dans [generation-solidity.md](generation-solidity.md), é
 | `FR-SOL-06` | exactitude, rien d'omis | `scobelix/solgen/lift.py` — `_Lifter.unstructured()`, `_Lifter.st_undefined()`, `_Lifter.e_undefined()`, `_Lifter.st_continue()`, `_STATEMENTS`, `_EXPRESSIONS` ; `scobelix/solgen/render.py` — `_FunctionRenderer.s_Unstructured()`, `_FunctionRenderer.expr()`, `_FunctionRenderer.s_Continue()` |
 | `FR-SOL-07` | échec d'une réécriture | `scobelix/solgen/pipeline.py` — `run_passes()`, `prepare()`, `finish()` |
 | `FR-SOL-08` | contenu du résultat | `scobelix/solgen/v2.py` — `SolgenResult`, `SolgenResult.to_json()`, `_table()`, `_storage_layout()`, `_original()`, `record()` ; `scobelix/solgen/passes/storage.py` — `finish()` |
-| `FR-SOL-09` | version visée | `scobelix/solgen/v2.py` — `choose_target()`, `DEFAULT_TARGET`, `_assemble()`, `Generator._run()` ; `scobelix/solgen/render.py` — `RenderContext.need()` |
+| `FR-SOL-09` | version visée | `scobelix/solgen/v2.py` — `choose_target()`, `DEFAULT_TARGET`, `_assemble()`, `Generator._run()` ; `scobelix/solgen/render.py` — `RenderContext.need()`, `CANCUN` |
 | `FR-SOL-10` | SPDX, `pragma`, `abicoder v1` | `scobelix/solgen/contract.py` — `assemble()` ; `scobelix/solgen/v2.py` — `_original_abi_v2()` ; `scobelix/solgen/abi.py` — `uses_abi_v1()`, `uses_abi_v2()` ; `scobelix/solgen/render.py` — `_FunctionRenderer.x_Env()` |
 | `FR-SOL-11` | commentaire d'en-tête | `scobelix/solgen/contract.py` — `_header()`, `_VERIFIED_LEGEND` |
 | `FR-SOL-12` | ordre des éléments | `scobelix/solgen/contract.py` — `assemble()`, `_Structs` ; `scobelix/solgen/pipeline.py` — `DECLARATION_KINDS`, `PassContext.declare()` |
@@ -162,8 +166,8 @@ Exigences détaillées dans [generation-solidity.md](generation-solidity.md), é
 | `FR-SOL-50` | `compound` | `scobelix/solgen/passes/compound.py` — `run()`, `_Compound.stmt()`, `_Compound.assign()`, `_Compound.typed_compound()`, `_Compound.evm_compound()`, `_Compound.expr()`, `_Compound.bool_return()` |
 | `FR-SOL-51` | `modifiers` | `scobelix/solgen/passes/modifiers.py` — `prepare()`, `run()`, `finish()`, `first_check()`, `lifted_check()`, `check_name()` ; `scobelix/solgen/contract.py` — `_modifiers()` |
 | `FR-SOL-52` | choix du compilateur, absence | `scobelix/solgen/validate.py` — `validate_solidity()` ; `scobelix/verify/solc.py` — `solc_for_source()` |
-| `FR-SOL-53` | fichier temporaire, `--bin`, délai | `scobelix/solgen/validate.py` — `validate_solidity()` |
-| `FR-SOL-54` | reprise via-IR | `scobelix/solgen/validate.py` — `validate_solidity()`, `VIA_IR_ONLY`, `ValidationResult` |
+| `FR-SOL-53` | fichier temporaire, `--bin`, délai par exécution et délai total | `scobelix/solgen/validate.py` — `validate_solidity()`, `DEFAULT_TIMEOUT`, `_clock` |
+| `FR-SOL-54` | reprise via-IR, sautée faute de temps sous un délai total | `scobelix/solgen/validate.py` — `validate_solidity()`, `VIA_IR_ONLY`, `VIA_IR_NO_TIME`, `ValidationResult` |
 | `FR-SOL-55` | délai dépassé, lancement impossible | `scobelix/solgen/validate.py` — `validate_solidity()` |
 | `FR-SOL-56` | lignes, statuts, version | `scobelix/solgen/validate.py` — `validate_solidity()`, `ValidationResult` |
 | `FR-SOL-57` | validation d'un résultat | `scobelix/solgen/validate.py` — `validate()` |
@@ -221,7 +225,7 @@ Exigences détaillées dans [integration.md](integration.md), énoncés fonction
 | `FR-INT-29` | version = max(manifeste, dernière étiquette) + correctif, ligne unique réécrite | `.github/workflows/bump-version.yml` — étape `Bump version in pyproject.toml` |
 | `FR-INT-30` | commit si changement, auteur déclaré robot, envoi de la branche, étiquette | `.github/workflows/bump-version.yml` — étapes `Commit and push changes`, `Tag the new version` |
 | `FR-INT-31` | jeton dédié, historique complet | `.github/workflows/bump-version.yml` — étape `Checkout repo` |
-| `FR-INT-32` | suite pytest et couverture | `tests/` (modules `test_*.py` du moteur, dont `test_golden_fixtures.py`, `test_dispatcher.py`, `test_metadata.py`, `test_memory_seed.py`, `test_vm_semantics.py`, `test_simplify.py`, `test_simplify_fuzz.py`, `test_simplify_time_limit.py`, `test_hash_seed.py`, `test_storage_defs.py`, `test_param_inference.py`, `test_function_traits.py`, `test_proxy_detect.py`, `test_sigdb.py`, `test_loader_input.py`, `test_main_combined_json.py`, `test_solgen_validate.py`, `test_fixtures_build.py`) ; `tests/solgen/` ; `tests/verify/` |
+| `FR-INT-32` | suite pytest et couverture | `tests/` (modules `test_*.py` du moteur, dont `test_golden_fixtures.py`, `test_dispatcher.py`, `test_metadata.py`, `test_memory_seed.py`, `test_vm_semantics.py`, `test_trace_nodes.py`, `test_simplify.py`, `test_simplify_fuzz.py`, `test_simplify_time_limit.py`, `test_time_budget.py`, `test_hash_seed.py`, `test_storage_defs.py`, `test_param_inference.py`, `test_function_traits.py`, `test_proxy_detect.py`, `test_sigdb.py`, `test_loader_input.py`, `test_main_input.py`, `test_main_combined_json.py`, `test_solgen_validate.py`, `test_fixtures_build.py`) ; `tests/solgen/` ; `tests/verify/` |
 | `FR-INT-33` | tests de compilation ignorés sans la version exacte, échec sur refus du compilateur, tests d'exécution ignorés sans machine | `tests/solgen/conftest.py` — `installed()`, `solc_or_skip()`, `compile_or_fail()`, `backend_or_skip()` ; `tests/verify/verify_helpers.py` — `solc_path()`, `requires_solc`, `requires_backend` ; `tests/test_solgen_validate.py` |
 | `FR-INT-34` | bytecodes de référence, registre, reconstruction à l'octet | `tests/fixtures/build_fixtures.py` — `compile_fixture()`, `main()` ; `tests/fixtures/fixtures.json` ; `tests/fixtures/bytecode/`, `tests/fixtures/sources/` ; `tests/test_fixtures_build.py` — `test_every_bytecode_fixture_is_registered()`, `test_fixture_rebuilds_byte_identical()` |
 | `FR-INT-35` | marqueur `slow`, exclu par défaut, `-m slow` | `pyproject.toml` — `[tool.pytest.ini_options]` ; `tests/solgen/conftest.py` — `BUILD_VARIANTS`, `LONG_DIFFERENTIAL`, `fixture_params()`, `differential_fixtures()` |
@@ -498,20 +502,22 @@ Exigences détaillées dans [sorties.md](sorties.md), énoncés fonctionnels dan
 | `FR-SOR-45` | `--json` indenté de deux espaces | `scobelix/__main__.py` — `print_decompilation()` |
 | `FR-SOR-46` | objet sur une ligne, séparateurs par défaut, saut de ligne final | `scobelix/__main__.py` — `print_decompilation()` ; `tests/test_main_combined_json.py` |
 | `FR-SOR-47` | `text` et `json` toujours présents, dans cet ordre | `scobelix/__main__.py` — `print_decompilation()` |
-| `FR-SOR-48` | clés Solidity, vérification et validation | `scobelix/__main__.py` — `print_decompilation()` |
+| `FR-SOR-48` | clés Solidity, vérification et validation, jeu de clés constant, `solgen_error` et `time_budget` en dernier | `scobelix/__main__.py` — `print_decompilation()`, `_solgen_payload()` |
 | `FR-SOR-49` | `solgen_functions` | `scobelix/solgen/v2.py` — `SolgenResult.functions_json()` |
 | `FR-SOR-50` | `solgen_verification`, objet de repli | `scobelix/__main__.py` — `_verification_json()`, `_verification_warnings()` ; `scobelix/solgen/v2.py` — `SolgenResult.verification_json()` ; `scobelix/solgen/tiers.py` — `Verification.to_json()` |
 | `FR-SOR-51` | contrat d'intégration générique | `tests/test_main_combined_json.py` ; `scobelix/__main__.py` — `parse_args()` |
-| `FR-SOR-52` | code généré imprimé, saut de ligne supplémentaire | `scobelix/__main__.py` — `print_decompilation()` |
+| `FR-SOR-64` | échec de la génération ou de la validation en `--combined-json` : clés vides, `solgen_error`, trace journalisée | `scobelix/__main__.py` — `_solgen_payload()`, `_failure()`, `_no_verification()`, `_BudgetExhausted`, `SOLGEN_SKIPPED`, `SOLGEN_INTERRUPTED` |
+| `FR-SOR-65` | clé `time_budget` en dernier sous un budget global, bytecode sans code compris ; ce qui la marque épuisée | `scobelix/__main__.py` — `print_decompilation()`, `_time_budget_json()`, `_generate_under_budget()`, `_validate_under_budget()` ; `scobelix/decompiler.py` — classe `TimeBudget`, `_decompile_with_loader()` |
+| `FR-SOR-52` | code généré imprimé, saut de ligne supplémentaire ; rien en cas d'échec de la génération | `scobelix/__main__.py` — `print_decompilation()`, `_generate_under_budget()` |
 | `FR-SOR-53` | résumé de vérification sur la sortie d'erreur | `scobelix/__main__.py` — `_print_verification()`, `_verification_warnings()` ; `scobelix/solgen/tiers.py` — `Verification` |
-| `FR-SOR-54` | statut, ligne IR et erreurs sur la sortie d'erreur | `scobelix/__main__.py` — `print_decompilation()` ; `scobelix/solgen/validate.py` — `validate_solidity()`, `VIA_IR_ONLY` |
+| `FR-SOR-54` | statut, ligne IR ou de budget, et erreurs sur la sortie d'erreur | `scobelix/__main__.py` — `print_decompilation()`, `_validate_under_budget()`, `VALIDATION_SKIPPED` ; `scobelix/solgen/validate.py` — `validate_solidity()`, `VIA_IR_ONLY` |
 | `FR-SOR-55` | clés du rapport, niveaux et statuts, `passed` | `scobelix/verify/report.py` — `VerificationReport.to_json()`, `VerificationReport.passed`, `LevelResult.to_dict()` ; `scobelix/verify/core.py` — `verify()` ; `scobelix/solgen/tiers.py` — `Verification.passed` |
 | `FR-SOR-56` | entrées par fonction et verdicts | `scobelix/verify/report.py` — `FunctionReport.to_dict()`, `Verdict`, `derive_verdict()` |
 | `FR-SOR-57` | `INCONCLUSIVE` d'environnement et de gas, statut de L3 | `scobelix/verify/report.py` — `derive_verdict()` ; `scobelix/verify/core.py` — `_level3()` ; `scobelix/verify/equiv.py` — `Differ._record()` |
 | `FR-SOR-58` | contre-exemple | `scobelix/verify/report.py` — `counterexample_to_dict()`, `_call_to_dict()`, `_pre_to_dict()`, `_result_to_dict()` |
 | `FR-SOR-59` | format de journal | `scobelix/__main__.py` — `main()` |
 | `FR-SOR-60` | messages INFO minimaux | `scobelix/decompiler.py` — `_decompile_with_loader()` ; `scobelix/loader.py` — `Loader.load_addr()` ; `scobelix/utils/sigdb.py` — `_open_default()`, `build()` |
-| `FR-SOR-61` | avertissements et erreur d'échec de fonction | `scobelix/vm.py` — `VM.run()` ; `scobelix/simplify.py` — `simplify_trace()` ; `scobelix/sparser.py` — `_sparser_resilient()` ; `scobelix/utils/sigdb.py` — `_open_default()` ; `scobelix/decompiler.py` — `_decompile_with_loader()` |
+| `FR-SOR-61` | avertissements (dont ceux du budget global) et erreur d'échec de fonction | `scobelix/vm.py` — `VM.run()` ; `scobelix/simplify.py` — `simplify_trace()` ; `scobelix/sparser.py` — `_sparser_resilient()` ; `scobelix/utils/sigdb.py` — `_open_default()` ; `scobelix/decompiler.py` — `_decompile_with_loader()` ; `scobelix/__main__.py` — `_solgen_payload()`, `_generate_under_budget()` |
 | `FR-SOR-62` | message d'entrée invalide | `scobelix/__main__.py` — `main()` ; `scobelix/loader.py` — `parse_hex_code()`, `InvalidBytecode` |
 | `FR-SOR-63` | profil au format pstats | `scobelix/__main__.py` — `main()` |
 

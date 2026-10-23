@@ -195,8 +195,15 @@ specified with their observable effect, in French, in the documents under
    `SCOBELIX_ALLOW_SOLC_DOWNLOAD` allows; the missing-compiler message names
    `allow_download=True` and `SCOBELIX_ALLOW_SOLC_DOWNLOAD`, not
    `--allow-solc-download`.
- * The positional argument is classified by its length only (42 characters
-   is an address).
+ * Under `--time-budget`, what follows the functions (their
+   characterization, the storage layout, the AST and the text) has no time
+   limit of its own and can outlive its reserve (10 % of the budget, at
+   least 5 s, plus half the time of every function kept less simplified):
+   the output came 27 s past a 60 s budget on a 24 KB contract whose
+   functions, once done, take 32 s to write out. A first build of the
+   signature database is not interrupted either, and a step of the
+   symbolic execution or a simplification pass that does not check the
+   time is only stopped by the alarm of its function, which then fails.
  * Residues: `-v` accepts the logging library's names `BASIC_FORMAT` (then
    runs at INFO) and `_STYLES` (then fails with exit status 1), which are not
    levels; `--repr` and `--returns` are unreachable; `requests` is declared

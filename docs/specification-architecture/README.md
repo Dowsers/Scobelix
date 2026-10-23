@@ -8,16 +8,16 @@ Contrairement aux deux autres répertoires — délibérément « boîte noire �
 
 | Fichier | Trace les exigences de |
 |---|---|
-| [architecture.md](architecture.md) | [../specification-fonctionnelle/architecture.md](../specification-fonctionnelle/architecture.md) (`FR-ARCH-01` à `77`) |
+| [architecture.md](architecture.md) | [../specification-fonctionnelle/architecture.md](../specification-fonctionnelle/architecture.md) (`FR-ARCH-01` à `81`) |
 | [pipeline-decompilation.md](pipeline-decompilation.md) | [../specification-fonctionnelle/pipeline-decompilation.md](../specification-fonctionnelle/pipeline-decompilation.md) (`FR-DEC-01` à `108`) |
 | [reconstruction-fonctions-stockage.md](reconstruction-fonctions-stockage.md) | [../specification-fonctionnelle/reconstruction-fonctions-stockage.md](../specification-fonctionnelle/reconstruction-fonctions-stockage.md) (`FR-STOR-01` à `41`) |
 | [resolution-signatures.md](resolution-signatures.md) | [../specification-fonctionnelle/resolution-signatures.md](../specification-fonctionnelle/resolution-signatures.md) (`FR-SIG-01` à `46`) |
 | [generation-solidity.md](generation-solidity.md) | [../specification-fonctionnelle/generation-solidity.md](../specification-fonctionnelle/generation-solidity.md) (`FR-SOL-01` à `73`) |
-| [sorties.md](sorties.md) | [../specification-fonctionnelle/sorties.md](../specification-fonctionnelle/sorties.md) (`FR-SOR-01` à `63`) |
+| [sorties.md](sorties.md) | [../specification-fonctionnelle/sorties.md](../specification-fonctionnelle/sorties.md) (`FR-SOR-01` à `65`) |
 | [integration.md](integration.md) | [../specification-fonctionnelle/integration.md](../specification-fonctionnelle/integration.md) (`FR-INT-01` à `38`) |
 | [parametrage-signatures.md](parametrage-signatures.md) | [../specification-parametrage/parametrage-signatures.md](../specification-parametrage/parametrage-signatures.md) (`FR-PARAM-01` à `30`) |
 
-Les 476 exigences fonctionnelles du répertoire `docs/` sont couvertes — chaque identifiant a exactement une ligne dans le document de traçabilité de son domaine, dans l'ordre du document fonctionnel, vérifié mécaniquement. Pour une vue consolidée de cette couverture (une ligne par exigence : objet abrégé et localisation, sans l'explication détaillée), voir [matrice-couverture.md](matrice-couverture.md).
+Les 482 exigences fonctionnelles du répertoire `docs/` sont couvertes — chaque identifiant a exactement une ligne dans le document de traçabilité de son domaine, dans l'ordre du document fonctionnel, vérifié mécaniquement. Pour une vue consolidée de cette couverture (une ligne par exigence : objet abrégé et localisation, sans l'explication détaillée), voir [matrice-couverture.md](matrice-couverture.md).
 
 ## Comment lire un tableau de traçabilité
 
@@ -30,7 +30,7 @@ Les notes contextuelles des documents fonctionnels sont reprises sous les tablea
 
 ## Note de méthode et limites
 
-Ces citations de code sont un instantané de l'état du dépôt au 2026-10-15 : le code peut évoluer sans que ce répertoire soit mis à jour en parallèle. En cas de doute sur une citation, vérifier directement dans le fichier source cité plutôt que de faire confiance à l'ancienneté du document. Les chiffres vivants (nombre de tests et de bytecodes de référence, lignes de la base de signatures, volume du fichier de la base) y sont datés.
+Ces citations de code sont un instantané de l'état du dépôt au 2026-10-15, mis à jour le 2026-10-21 pour le budget de temps global, l'échec de la génération dans le payload combiné, la nature de l'entrée de la commande et la version visée par les constructions de Cancun : le code peut évoluer sans que ce répertoire soit mis à jour en parallèle. En cas de doute sur une citation, vérifier directement dans le fichier source cité plutôt que de faire confiance à l'ancienneté du document. Les chiffres vivants (nombre de tests et de bytecodes de référence, lignes de la base de signatures, volume du fichier de la base) y sont datés.
 
 Les comportements dont la mention indique « vérifié en bac à sable » ont été reproduits en exécutant le code du dépôt hors du dépôt, sans accès réseau et sans écriture dans le dépôt : base de signatures existante ouverte en lecture seule, ou base dédiée désignée par `SCOBELIX_SIGDB` dans un répertoire temporaire ; compilateurs Solidity déjà installés et machines EVM de l'option `verify` pour la génération vérifiée ; bytecodes de référence de `tests/fixtures/`. Les autres comportements — notamment le mode adresse face à un nœud réel et le téléchargement d'un compilateur — sont établis par lecture du code.
 

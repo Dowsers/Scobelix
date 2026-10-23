@@ -12,6 +12,14 @@ import pytest
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _no_time_budget_from_the_environment(monkeypatch):
+    """The command reads SCOBELIX_TIME_BUDGET at every invocation: these
+    tests run without it, whatever the environment they run in (a test that
+    wants a budget passes --time-budget or sets the variable itself)."""
+    monkeypatch.delenv("SCOBELIX_TIME_BUDGET", raising=False)
+
+
 def fixture_names():
     return sorted(p.stem for p in (FIXTURES / "bytecode").glob("*.hex"))
 

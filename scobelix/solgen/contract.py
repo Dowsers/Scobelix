@@ -3,7 +3,7 @@ Contract assembly: one Solidity source from the rendered entry points.
 
   * pragma: `^0.8.M`, M the newest feature the text needs (NatSpec custom
     tags 0.8.2, block.basefee 0.8.7, block.prevrandao 0.8.18, cancun
-    builtins 0.8.24); the target compiler is recorded in the header.
+    builtins 0.8.25); the target compiler is recorded in the header.
     `pragma abicoder v1` when the original's decoder did not validate
     parameters (ABI coder v1).
   * known names (keccak-verified signatures) become external functions
