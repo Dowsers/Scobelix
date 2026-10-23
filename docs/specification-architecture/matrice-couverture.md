@@ -118,7 +118,7 @@ Exigences détaillées dans [generation-solidity.md](generation-solidity.md), é
 | `FR-SOL-06` | exactitude, rien d'omis | `scobelix/solgen/lift.py` — `_Lifter.unstructured()`, `_Lifter.st_undefined()`, `_Lifter.e_undefined()`, `_Lifter.st_continue()`, `_STATEMENTS`, `_EXPRESSIONS` ; `scobelix/solgen/render.py` — `_FunctionRenderer.s_Unstructured()`, `_FunctionRenderer.expr()`, `_FunctionRenderer.s_Continue()` |
 | `FR-SOL-07` | échec d'une réécriture | `scobelix/solgen/pipeline.py` — `run_passes()`, `prepare()`, `finish()` |
 | `FR-SOL-08` | contenu du résultat | `scobelix/solgen/v2.py` — `SolgenResult`, `SolgenResult.to_json()`, `_table()`, `_storage_layout()`, `_original()`, `record()` ; `scobelix/solgen/passes/storage.py` — `finish()` |
-| `FR-SOL-09` | version visée | `scobelix/solgen/v2.py` — `choose_target()`, `DEFAULT_TARGET`, `_assemble()`, `Generator._run()` ; `scobelix/solgen/render.py` — `RenderContext.need()` |
+| `FR-SOL-09` | version visée | `scobelix/solgen/v2.py` — `choose_target()`, `DEFAULT_TARGET`, `_assemble()`, `Generator._run()` ; `scobelix/solgen/render.py` — `RenderContext.need()`, `CANCUN` |
 | `FR-SOL-10` | SPDX, `pragma`, `abicoder v1` | `scobelix/solgen/contract.py` — `assemble()` ; `scobelix/solgen/v2.py` — `_original_abi_v2()` ; `scobelix/solgen/abi.py` — `uses_abi_v1()`, `uses_abi_v2()` ; `scobelix/solgen/render.py` — `_FunctionRenderer.x_Env()` |
 | `FR-SOL-11` | commentaire d'en-tête | `scobelix/solgen/contract.py` — `_header()`, `_VERIFIED_LEGEND` |
 | `FR-SOL-12` | ordre des éléments | `scobelix/solgen/contract.py` — `assemble()`, `_Structs` ; `scobelix/solgen/pipeline.py` — `DECLARATION_KINDS`, `PassContext.declare()` |

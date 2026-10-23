@@ -104,6 +104,18 @@ def test_l0_compiles_with_the_target(name, results):
     assert "pragma solidity ^0.8." in r.solidity
 
 
+def test_the_cancun_builtins_need_a_release_that_compiles_them_as_is(results):
+    # solc 0.8.24 knows tload/tstore, blobhash and block.blobbasefee but
+    # targets Shanghai unless told otherwise: 0.8.25 is the first release
+    # that compiles them with its default EVM version, so the pragma floor
+    # and the target of a text using them are at least 0.8.25
+    r = _generate("TransientSwap", results)
+    assert "_tload(" in r.solidity and "_tstore(" in r.solidity
+    assert "pragma solidity ^0.8.25;" in r.solidity
+    assert tuple(int(x) for x in r.target_solc.split(".")) >= (0, 8, 25)
+    compile_or_fail(r.solidity, r.target_solc)
+
+
 @pytest.mark.parametrize("name", fixture_params())
 def test_l1_external_abi(name, results):
     r = _generate(name, results)

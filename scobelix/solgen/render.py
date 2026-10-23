@@ -67,6 +67,11 @@ __all__ = ["RenderContext", "EntryRender", "Helpers", "render_function_body", "l
 
 W, B = "word", "bool"
 
+# The compiler version the Cancun builtins (tload/tstore, blobhash,
+# block.blobbasefee) need: 0.8.24 knows them but targets Shanghai unless
+# told otherwise, 0.8.25 is the first release that compiles them as is.
+CANCUN = (0, 8, 25)
+
 
 # ---------------------------------------------------------------- helpers registry
 
@@ -1063,7 +1068,7 @@ class _FunctionRenderer:
                 return "block.prevrandao", W
             return "block.difficulty", W
         if n == "blobbasefee":
-            self.ctx.need("block.blobbasefee", (0, 8, 24))
+            self.ctx.need("block.blobbasefee", CANCUN)
             return "block.blobbasefee", W
         if n == "selfbalance":
             return "address(this).balance", W
@@ -1449,11 +1454,11 @@ class _FunctionRenderer:
         return f"uint256(blockhash({_strip(self.w(e.number))}))", W
 
     def x_BlobHash(self, e):
-        self.ctx.need("blobhash", (0, 8, 24))
+        self.ctx.need("blobhash", CANCUN)
         return f"uint256(blobhash({_strip(self.w(e.index))}))", W
 
     def x_TLoad(self, e):
-        self.ctx.need("tload", (0, 8, 24))
+        self.ctx.need("tload", CANCUN)
         return f"{self.h.use('_tload')}({_strip(self.w(e.slot))})", W
 
     def x_Ternary(self, e):
@@ -2375,7 +2380,7 @@ class _FunctionRenderer:
         return [_i(ind) + f"_vm = {self.h.use('_vmWrite')}(_vm, {addr}, {self.bytes_(d)});"]
 
     def s_TStore(self, s, ind):
-        self.ctx.need("tstore", (0, 8, 24))
+        self.ctx.need("tstore", CANCUN)
         return [_i(ind) + f"{self.h.use('_tstore')}({_strip(self.w(s.slot))}, {_strip(self.w(s.value))});"]
 
     def s_Log(self, s, ind):
