@@ -2,15 +2,40 @@ import cProfile
 import json
 import logging
 import argparse
+import os
 import re
 import sys
+import threading
 
 import coloredlogs
+import timeout_decorator
 
-from scobelix.decompiler import TimeoutInterrupt, decompile_address, decompile_bytecode
+from scobelix.decompiler import MAX_ALARM_SECONDS, TimeoutInterrupt, decompile_address, decompile_bytecode
 from scobelix.loader import InvalidBytecode
 
 logger = logging.getLogger(__name__)
+
+# The global time budget of a decompilation, when --time-budget is absent:
+# read at every invocation.
+TIME_BUDGET_ENV = "SCOBELIX_TIME_BUDGET"
+# Under a time budget, the Solidity generation and the validation get what
+# is left of it less this many seconds for printing the output; the
+# generation is not attempted with less than SOLGEN_MIN_SECONDS.
+OUTPUT_RESERVE = 2.0
+SOLGEN_MIN_SECONDS = 2.0
+# Under a time budget, the share of the time of the generation its
+# verification loop does not get (OUTPUT_RESERVE seconds at least): the
+# loop stops by itself before the alarm of the generation, which then
+# writes the functions it did not accept in exact form.
+VERIFY_RESERVE = 0.25
+SOLGEN_SKIPPED = "time budget exhausted before the Solidity generation"
+SOLGEN_INTERRUPTED = "Solidity generation interrupted by the time budget"
+VALIDATION_SKIPPED = "time budget exhausted before the Solidity validation"
+
+
+class _BudgetExhausted(TimeoutInterrupt):
+    """The time budget left no time for the Solidity generation, or
+    interrupted it (`value` says which)."""
 
 
 def parse_args(args):
@@ -74,9 +99,11 @@ def parse_args(args):
         default=None,
         metavar="SECONDS",
         help="With --verify, the time the verification may take as a whole "
-        "(default: 300). When it runs out, the functions not verified yet "
-        "are written in the form closest to the bytecode and reported as "
-        "not verified.",
+        "(default: 300; under --time-budget, at most three quarters of what "
+        "is left for the Solidity generation, which keeps the rest to write "
+        "the source). When it runs out, the functions not verified yet are "
+        "written in the form closest to the bytecode and reported as not "
+        "verified.",
     )
     parser.add_argument(
         "--target-solc",
@@ -120,8 +147,44 @@ def parse_args(args):
         "invoking this CLI multiple times. Takes precedence over "
         "--json/--solidity alone.",
     )
+    parser.add_argument(
+        "--time-budget",
+        type=_seconds,
+        default=None,
+        metavar="SECONDS",
+        help="The time the whole decompilation of one input may take "
+        "(default: the SCOBELIX_TIME_BUDGET environment variable, else no "
+        "limit besides the per-function budgets). The functions it leaves "
+        "less than a second to are written as failures, every step keeps the "
+        "smaller of its own budget and what is left, and the Solidity "
+        "generation (with --solidity) is interrupted or skipped when it "
+        "would outlive it. The output is then partial, never absent (except "
+        "with --solidity alone, which has nothing to print without the "
+        "generation: use --combined-json), but it is printed at the end: a "
+        "caller that kills the process on a timeout must allow the budget "
+        "plus a margin for what the budget does not bound (the start of the "
+        "process, reading the input, a first build of the signature "
+        "database, the steps after the functions when they outlive the "
+        "share of the budget kept for them).",
+    )
 
-    return parser.parse_args(args)
+    parsed = parser.parse_args(args)
+    if parsed.time_budget is None:
+        parsed.time_budget = _time_budget_from_environment(parser)
+    return parsed
+
+
+def _time_budget_from_environment(parser):
+    """The time budget of SCOBELIX_TIME_BUDGET, read now; None when the
+    variable is absent or empty, a usage error (status 2) when its value
+    is not a positive number of seconds."""
+    value = os.environ.get(TIME_BUDGET_ENV, "").strip()
+    if not value:
+        return None
+    try:
+        return _seconds(value)
+    except argparse.ArgumentTypeError as e:
+        parser.error(f"{TIME_BUDGET_ENV}: {e}")
 
 
 def _solc_version(value):
@@ -140,23 +203,108 @@ def _seconds(value):
     return seconds
 
 
-def _generate_solidity(decompilation, args):
+def _verification_limits(args, time_left):
+    """The time limit of the verification loop under a time budget
+    (`time_left`: the seconds the Solidity generation has), and its own one
+    (--verify-timeout, else the default of the loop): the shorter of that
+    and what is left less VERIFY_RESERVE of it."""
+    from scobelix.solgen import SearchBudget
+
+    own = SearchBudget().time_limit if args.verify_timeout is None else args.verify_timeout
+    share = time_left - max(OUTPUT_RESERVE, VERIFY_RESERVE * time_left)
+    return min(own, max(share, 1e-3)), own  # (a positive time: the loop then stops at its first check)
+
+
+def _generate_solidity(decompilation, args, time_left=None):
+    """generate_solidity() with the options of the command; `time_left`
+    (seconds, under a time budget) caps the time limit of the verification
+    loop (_verification_limits)."""
     from scobelix.solgen import generate_solidity
 
+    limit = args.verify_timeout if time_left is None else _verification_limits(args, time_left)[0]
     return generate_solidity(
         decompilation,
         verify=args.verify,
         target_solc=args.target_solc,
         idiom_level=args.idiom_level,
         allow_solc_download=True if args.allow_solc_download else None,
-        budget=None if args.verify_timeout is None else {"time_limit": args.verify_timeout},
+        budget=None if limit is None else {"time_limit": limit},
     )
 
 
-def _validate(result, args):
+def _cut_by_the_budget(result, args, time_left):
+    """Whether the verification loop of `result` stopped at the time limit
+    the time budget gave it, shorter than its own."""
+    limit, own = _verification_limits(args, time_left)
+    search = getattr(getattr(result, "verification", None), "search", None) or {}
+    return limit < own and search.get("exhausted_by") == "time"
+
+
+def _validate(result, args, time_left=None):
+    """validate() with the options of the command; `time_left` (seconds)
+    caps the time of the compiler."""
     from scobelix.solgen import validate
 
-    return validate(result, allow_download=True if args.allow_solc_download else None)
+    allow = True if args.allow_solc_download else None
+    if time_left is None:
+        return validate(result, allow_download=allow)
+    return validate(result, allow_download=allow, timeout=time_left)
+
+
+def _generate_under_budget(decompilation, args):
+    """_generate_solidity(), bounded by what is left of the time budget of
+    the decompilation (none: as it is): nothing is attempted when too
+    little is left, and an alarm interrupts a generation that outlives it
+    (_BudgetExhausted either way, the budget marked exhausted); a
+    verification loop that stops at the time the budget left it marks the
+    budget exhausted too. The alarm needs the main thread: elsewhere the
+    generation runs unbounded."""
+    budget = decompilation.time_budget
+    if budget is None:
+        return _generate_solidity(decompilation, args)
+    time_left = min(budget.remaining() - OUTPUT_RESERVE, MAX_ALARM_SECONDS)
+    if time_left < SOLGEN_MIN_SECONDS:
+        budget.exhausted = True
+        raise _BudgetExhausted(SOLGEN_SKIPPED)
+
+    def generate():
+        return _generate_solidity(decompilation, args, time_left)
+
+    if threading.current_thread() is not threading.main_thread():
+        logger.warning("the time budget cannot bound the Solidity generation outside the main thread")
+        result = generate()
+    else:
+        bounded = timeout_decorator.timeout(
+            time_left, timeout_exception=_BudgetExhausted, exception_message=SOLGEN_INTERRUPTED
+        )(generate)
+        try:
+            result = bounded()
+        except _BudgetExhausted:
+            budget.exhausted = True
+            raise
+    if args.verify and _cut_by_the_budget(result, args, time_left):
+        budget.exhausted = True
+    return result
+
+
+def _validate_under_budget(result, decompilation, args):
+    """_validate(), the compiler's time capped by what is left of the time
+    budget of the decompilation (none: as it is); a validation `skipped`
+    when nothing is left. The budget is marked exhausted then, and when
+    what was left of it cut the compiler short."""
+    from scobelix.solgen import ValidationResult
+
+    budget = decompilation.time_budget
+    if budget is None:
+        return _validate(result, args)
+    time_left = budget.remaining() - OUTPUT_RESERVE
+    if time_left <= 0:
+        budget.exhausted = True
+        return ValidationResult(status="skipped", errors=[], warnings=[VALIDATION_SKIPPED])
+    validation = _validate(result, args, time_left)
+    if getattr(validation, "out_of_time", False):
+        budget.exhausted = True
+    return validation
 
 
 def _verification_warnings(result):
@@ -180,21 +328,24 @@ def _verification_json(result):
 
 def _failure(e):
     """What the combined JSON says of an exception of the generation."""
+    if isinstance(e, _BudgetExhausted):
+        return e.value
     return f"{type(e).__name__}: {e}"
 
 
 def _solgen_payload(decompilation, args):
     """The keys --solidity adds to the combined JSON object.
 
-    An exception of the generation (or of the verification it runs) does
-    not lose the text and the AST already decompiled: the keys are present
-    with nothing in them, `solgen_warnings` and `solgen_error` carry the
-    message, and the traceback goes to the log. The same goes for an
-    exception of the validation, which then keeps the generated source.
+    An exception of the generation (or of the verification it runs), or
+    its interruption by the time budget, does not lose the text and the
+    AST already decompiled: the keys are present with nothing in them,
+    `solgen_warnings` and `solgen_error` carry the message, and the
+    traceback goes to the log. The same goes for an exception of the
+    validation, which then keeps the generated source.
     """
     payload = {}
     try:
-        result = _generate_solidity(decompilation, args)
+        result = _generate_under_budget(decompilation, args)
         payload["solidity"] = result.solidity
         payload["solgen_confidence"] = result.confidence
         payload["solgen_warnings"] = result.warnings
@@ -204,7 +355,10 @@ def _solgen_payload(decompilation, args):
             payload["solgen_verification"] = _verification_json(result)
     except (Exception, TimeoutInterrupt) as e:
         message = _failure(e)
-        logger.exception("Solidity generation failed (%s): the text and the AST are printed without it", message)
+        if isinstance(e, _BudgetExhausted):
+            logger.warning("%s: the text and the AST are printed without it", message)
+        else:
+            logger.exception("Solidity generation failed (%s): the text and the AST are printed without it", message)
         payload.update(solidity="", solgen_confidence={}, solgen_warnings=[message], solgen_functions={})
         if args.verify:
             payload["solgen_verification"] = _no_verification([message])
@@ -215,7 +369,7 @@ def _solgen_payload(decompilation, args):
 
     if args.validate_solidity:
         try:
-            v = _validate(result, args)
+            v = _validate_under_budget(result, decompilation, args)
             payload["solgen_validation"] = {
                 "status": v.status,
                 "errors": v.errors,
@@ -227,6 +381,11 @@ def _solgen_payload(decompilation, args):
             payload["solgen_validation"] = {"status": "skipped", "errors": [], "warnings": [message]}
             payload["solgen_error"] = message
     return payload
+
+
+def _time_budget_json(budget):
+    """The `time_budget` key of the combined JSON object."""
+    return {"seconds": budget.seconds, "exhausted": budget.exhausted, "skipped": list(budget.skipped)}
 
 
 def _print_verification(result):
@@ -259,9 +418,9 @@ def print_decompilation(this_addr, args):
         this_addr = sys.stdin.read().strip()
 
     if len(this_addr) == 42:
-        decompilation = decompile_address(this_addr, function_name)
+        decompilation = decompile_address(this_addr, function_name, time_budget=args.time_budget)
     else:
-        decompilation = decompile_bytecode(this_addr, function_name)
+        decompilation = decompile_bytecode(this_addr, function_name, time_budget=args.time_budget)
 
     if args.combined_json:
         payload = {"text": decompilation.text, "json": decompilation.json}
@@ -269,18 +428,21 @@ def print_decompilation(this_addr, args):
         if args.solidity:
             payload.update(_solgen_payload(decompilation, args))
 
+        if decompilation.time_budget is not None:
+            payload["time_budget"] = _time_budget_json(decompilation.time_budget)
+
         print(json.dumps(payload))
     elif args.solidity:
-        result = _generate_solidity(decompilation, args)
+        result = _generate_under_budget(decompilation, args)
         print(result.solidity)
 
         if args.verify:
             _print_verification(result)
 
         if args.validate_solidity:
-            v = _validate(result, args)
+            v = _validate_under_budget(result, decompilation, args)
             print(f"# solc validation: {v.status}", file=sys.stderr)
-            if v.via_ir:
+            if v.via_ir or VALIDATION_SKIPPED in v.warnings:
                 print(f"#   {v.warnings[0]}", file=sys.stderr)
             for e in v.errors:
                 print(f"#   {e}", file=sys.stderr)

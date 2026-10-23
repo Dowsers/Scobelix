@@ -141,18 +141,24 @@ class Loader(EasyCopy):
 
         self.load_binary(code)
 
-    def run(self, vm):
+    def run(self, vm, budget=None):
+        """budget: seconds the discovery may take at most when a global time
+        budget caps it (LOADER_TIMEOUT or that, whichever is smaller)."""
         assert self.binary is not None, "Did you run load_*() first?"
 
         self.dispatcher = None
         self.dispatcher_summary = None
+
+        timeout = LOADER_TIMEOUT
+        if budget is not None:
+            timeout = budget if LOADER_TIMEOUT <= 0 else min(LOADER_TIMEOUT, budget)
 
         try:
             # decompiles the code, starting from location 0
             # and running VM in a special mode that returns 'funccall'
             # in places where it looks like there is a func call
 
-            trace = vm.run(0, timeout=LOADER_TIMEOUT)
+            trace = vm.run(0, timeout=timeout)
             analysis = dispatcher.analyse(trace)
 
         except Exception:

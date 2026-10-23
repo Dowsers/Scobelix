@@ -1,8 +1,17 @@
 import json
 
+import pytest
+
 from scobelix.__main__ import parse_args, print_decompilation
 
 FIXTURE_BYTECODE = "602a60005260206000f3"  # trivial "return 42"
+
+
+@pytest.fixture(autouse=True)
+def _no_time_budget_from_the_environment(monkeypatch):
+    """The command reads SCOBELIX_TIME_BUDGET at every invocation: these
+    tests run without it, whatever the environment they run in."""
+    monkeypatch.delenv("SCOBELIX_TIME_BUDGET", raising=False)
 
 
 def test_combined_json_with_solidity_has_all_expected_keys(capsys):

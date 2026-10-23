@@ -37,16 +37,101 @@ WHILES_TIMEOUT = int(os.environ.get("PANORAMIX_WHILES_TIMEOUT", "600"))
 # simplified (exact, Function.time_limited).
 SIMPLIFY_RESERVE = 0.25
 
+# The global time budget of a decompilation (decompile_bytecode(...,
+# time_budget=seconds)) is a deadline on this clock; an indirection, so
+# that the tests can move the clock.
+_clock = time.monotonic
+# Share of the time budget, at least BUDGET_RESERVE_MIN seconds, kept for
+# what follows the functions (the storage reconstruction, the JSON and the
+# text), which has no time limit of its own. Every function kept less
+# simplified (time_limited) adds TIME_LIMITED_RESERVE of the time it took:
+# what follows the functions takes that much longer on its larger trace.
+BUDGET_RESERVE = 0.1
+BUDGET_RESERVE_MIN = 5.0
+TIME_LIMITED_RESERVE = 0.5
+# A function is not attempted with less time than this left (seconds): the
+# alarm would only cut it short.
+MIN_FUNCTION_SECONDS = 1.0
+# What the function discovery gets when the budget is already exhausted: it
+# cannot be left out, so it runs until its first check of the time.
+MIN_SLICE = 1e-3
+# The longest alarm a step gets under a time budget (about 31 years):
+# signal.setitimer refuses much longer ones, and a budget that long sets
+# no limit anyway.
+MAX_ALARM_SECONDS = 1e9
 
-def simplification_deadline(started):
+
+def simplification_deadline(started, budget=None):
     """
     The time (time.monotonic()) at which the simplification of a function
     whose decompilation started at `started` stops, besides WHILES_TIMEOUT;
-    None without a function timeout.
+    None without a function timeout. `budget` is the time the function has
+    (seconds) when a global time budget caps it: FUNCTION_TIMEOUT otherwise.
     """
-    if FUNCTION_TIMEOUT <= 0:
+    limit = FUNCTION_TIMEOUT if budget is None else budget
+    if limit <= 0:
         return None
-    return started + FUNCTION_TIMEOUT * (1 - SIMPLIFY_RESERVE)
+    return started + limit * (1 - SIMPLIFY_RESERVE)
+
+
+def _capped(limit, cap):
+    """`limit` (seconds; 0 or less: no limit) or `cap` when that is smaller:
+    what a step of the decompilation gets under a global time budget."""
+    return cap if limit <= 0 else min(limit, cap)
+
+
+def _vm_share(ft):
+    """The time limit of the symbolic execution of a function that has `ft`
+    seconds under a global time budget: the share of the function's budget
+    it has without one (VM_RUN_TIMEOUT / FUNCTION_TIMEOUT, all of it at
+    most), 1 - SIMPLIFY_RESERVE of it when either has no limit (and
+    VM_RUN_TIMEOUT at most). It ends before the alarm of the function, so
+    that an execution stopped by it keeps its partial trace instead of
+    making the function a failure."""
+    if FUNCTION_TIMEOUT > 0 and VM_RUN_TIMEOUT > 0:
+        return ft * min(1.0, VM_RUN_TIMEOUT / FUNCTION_TIMEOUT)
+    return _capped(VM_RUN_TIMEOUT, ft * (1 - SIMPLIFY_RESERVE))
+
+
+@dataclasses.dataclass
+class TimeBudget:
+    """
+    The global time budget of one decompilation, as a deadline on `_clock`.
+
+    The functions are decompiled until `reserve` seconds before the
+    deadline, each under the smaller of its own budgets (FUNCTION_TIMEOUT,
+    VM_RUN_TIMEOUT, the simplification deadline) and what is left; one
+    reached with less than MIN_FUNCTION_SECONDS left is not decompiled: a
+    `problem`, listed in `skipped`. Every function kept less simplified
+    (time_limited) makes the reserve larger. `exhausted` tells whether the
+    budget ran out before the end of the work or cut a step of it short (a
+    function left out or interrupted, or whose simplification stopped at
+    the time the budget left it; the command also sets it when the Solidity
+    generation, its verification loop or its validation is).
+    """
+
+    seconds: float
+    deadline: float  # the `_clock()` value at which the budget ends
+    reserve: float  # seconds kept for what follows the functions
+    exhausted: bool = False
+    skipped: list = dataclasses.field(default_factory=list)  # keys of the functions left out
+
+    @classmethod
+    def start(cls, seconds):
+        """A budget of `seconds` starting now."""
+        if isinstance(seconds, bool) or not (isinstance(seconds, (int, float)) and 0 < seconds < float("inf")):
+            raise ValueError(f"time_budget: not a positive number of seconds: {seconds!r}")
+        reserve = max(BUDGET_RESERVE_MIN, seconds * BUDGET_RESERVE)
+        return cls(seconds=seconds, deadline=_clock() + seconds, reserve=reserve)
+
+    def remaining(self):
+        """Seconds to the end of the budget (negative past it)."""
+        return self.deadline - _clock()
+
+    def left_for_functions(self, now=None):
+        """Seconds the functions still have (at `now`, a `_clock()` value;
+        by default now): the remaining less the reserve."""
+        return self.deadline - (_clock() if now is None else now) - self.reserve
 
 
 @dataclasses.dataclass
@@ -66,6 +151,9 @@ class Decompilation:
     # Function key (selector hex, "_fallback", "_receive") -> Function, for
     # in-memory consumers; not part of `json`.
     functions: dict = dataclasses.field(default_factory=dict)
+    # The time budget the decompilation ran under (TimeBudget: what it was,
+    # whether it ran out, the functions it left out); None without one.
+    time_budget: Optional[TimeBudget] = None
 
 
 # Derives from BaseException so it bypasses all the "except Exception" that are
@@ -80,19 +168,27 @@ class TimeoutInterrupt(BaseException):
         return repr(self.value)
 
 
-def decompile_bytecode(code: str, only_func_name=None) -> Decompilation:
+def decompile_bytecode(code: str, only_func_name=None, *, time_budget=None) -> Decompilation:
+    """The decompilation of the runtime bytecode `code` (hex, 0x optional).
+
+    only_func_name: decompile only the functions whose name starts with it.
+    time_budget: seconds the whole decompilation may take (see TimeBudget);
+    None for the per-function budgets alone.
+    """
     loader = Loader()
     loader.load_binary(code)  # Code is actually hex.
-    return _decompile_with_loader(loader, only_func_name)
+    return _decompile_with_loader(loader, only_func_name, time_budget=time_budget)
 
 
-def decompile_address(address: str, only_func_name=None) -> Decompilation:
+def decompile_address(address: str, only_func_name=None, *, time_budget=None) -> Decompilation:
+    """The decompilation of the code deployed at `address` (read from the
+    node of web3's automatic provider); parameters as decompile_bytecode."""
     loader = Loader()
     loader.load_addr(address)
-    return _decompile_with_loader(loader, only_func_name)
+    return _decompile_with_loader(loader, only_func_name, time_budget=time_budget)
 
 
-def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
+def _decompile_with_loader(loader, only_func_name=None, *, time_budget=None) -> Decompilation:
     """
 
     But the main decompilation process looks like this:
@@ -159,9 +255,14 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
         and the list of functions within the contract.
     """
 
+    budget = None if time_budget is None else TimeBudget.start(time_budget)
+
     logger.info("Running light execution to find functions.")
 
-    loader.run(VM(loader, just_fdests=True))
+    if budget is None:
+        loader.run(VM(loader, just_fdests=True))
+    else:
+        loader.run(VM(loader, just_fdests=True), budget=max(budget.left_for_functions(), MIN_SLICE))
 
     metadata = loader.metadata.to_dict() if loader.metadata else None
 
@@ -171,6 +272,7 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
             text=C.gray + "# No code found for this contract." + C.end,
             bytecode=loader.bytecode,
             metadata=metadata,
+            time_budget=budget,
         )
 
     callvalue_guarded = loader.callvalue_guarded_functions()
@@ -203,6 +305,22 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
         logger.debug("stack %s", stack)
         names[hash] = fname
 
+        # The time this function has: its own budgets, capped by what is
+        # left of the global time budget. Too little left: it is not
+        # decompiled (a problem), the next ones neither.
+        ft, vm_timeout = FUNCTION_TIMEOUT, VM_RUN_TIMEOUT
+        if budget is not None:
+            began = _clock()
+            left = budget.left_for_functions(began)
+            if left < MIN_FUNCTION_SECONDS:
+                problems[hash] = fname
+                budget.skipped.append(hash)
+                budget.exhausted = True
+                logger.warning("%s: not decompiled, the time budget (%s s) is exhausted", fname, budget.seconds)
+                continue
+            ft = min(_capped(FUNCTION_TIMEOUT, left), MAX_ALARM_SECONDS)
+            vm_timeout = _vm_share(ft)
+
         try:
             if target > 1 and loader.lines[target][1] == "jumpdest":
                 target += 1
@@ -210,12 +328,12 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
             # the memory the dispatcher leaves on the way to this function
             memory = loader.entry_memory.get(hash)
 
-            @timeout_decorator.timeout(FUNCTION_TIMEOUT, timeout_exception=TimeoutInterrupt)
+            @timeout_decorator.timeout(ft, timeout_exception=TimeoutInterrupt)
             def dec():
                 started = time.monotonic()
                 logger.info(" -> Interpreting EVM on function...")
                 trace = VM(loader).run(
-                    target, stack=stack, timeout=VM_RUN_TIMEOUT, memory=memory
+                    target, stack=stack, timeout=vm_timeout, memory=memory
                 )
                 explain("Initial decompiled trace", trace[1:])
 
@@ -231,7 +349,9 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
                     trace,
                     timeout=WHILES_TIMEOUT,
                     display=True,
-                    deadline=simplification_deadline(started),
+                    deadline=simplification_deadline(started)
+                    if budget is None
+                    else simplification_deadline(started, budget=ft),
                 )
                 if simplify.last_run_timed_out:
                     # exact, but the simplification stopped at its time limit
@@ -244,8 +364,18 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
                 return trace, display
 
             traces[hash] = dec()
-        except (Exception, TimeoutInterrupt):
+            if budget is not None and hash in time_limited:
+                # its trace, less simplified, makes what follows the
+                # functions longer: the next functions get that much less
+                budget.reserve += TIME_LIMITED_RESERVE * (_clock() - began)
+                if FUNCTION_TIMEOUT <= 0 or ft < FUNCTION_TIMEOUT:
+                    # the simplification stopped at the time the budget left it
+                    budget.exhausted = True
+        except (Exception, TimeoutInterrupt) as e:
             problems[hash] = fname
+            if budget is not None and isinstance(e, TimeoutInterrupt) and (FUNCTION_TIMEOUT <= 0 or ft < FUNCTION_TIMEOUT):
+                # the alarm was the budget's, not the function's own
+                budget.exhausted = True
             logger.exception("Problem with %s%s", fname, C.end)
 
     # a contract whose decoder validates a parameter anywhere uses ABI coder
@@ -265,8 +395,9 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
                 functions[hash].time_limited = True
                 logger.warning(
                     "%s: simplification stopped at its time limit (PANORAMIX_WHILES_TIMEOUT, "
-                    "PANORAMIX_FUNCTION_TIMEOUT): the code is exact but not fully simplified",
+                    "PANORAMIX_FUNCTION_TIMEOUT%s): the code is exact but not fully simplified",
                     names[hash],
+                    ", time budget" if budget is not None else "",
                 )
         except Exception:
             problems[hash] = names[hash]
@@ -292,6 +423,7 @@ def _decompile_with_loader(loader, only_func_name=None) -> Decompilation:
         metadata=metadata,
         dispatcher=loader.dispatcher_summary,
         functions=functions,
+        time_budget=budget,
     )
 
     for l in loader.disasm():
