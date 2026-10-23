@@ -8,7 +8,7 @@ Chaque exigence est identifiée par un code FR-INT-NN. Sauf mention contraire (�
 
 ## 1. Nœud Ethereum (mode adresse)
 
-- **FR-INT-01** : La lecture du code d'un contrat auprès d'un nœud Ethereum, seul échange réseau du système en dehors du téléchargement autorisé d'un compilateur (voir [architecture.md](architecture.md), section 1), DOIT n'être déclenchée que par une décompilation depuis une adresse (entrée de 42 caractères de la commande, ou fonction de décompilation par adresse de l'interface Python).
+- **FR-INT-01** : La lecture du code d'un contrat auprès d'un nœud Ethereum, seul échange réseau du système en dehors du téléchargement autorisé d'un compilateur (voir [architecture.md](architecture.md), section 1), DOIT n'être déclenchée que par une décompilation depuis une adresse (argument de 42 caractères de la commande sans l'option `--bytecode` — jamais le contenu de l'entrée standard —, ou fonction de décompilation par adresse de l'interface Python).
 - **FR-INT-02** : Le système DOIT exiger une adresse composée uniquement de caractères alphanumériques (une adresse contenant tout autre caractère provoque une erreur avant tout accès réseau), la convertir en minuscules, puis au format checksum avant l'interrogation ; une adresse alphanumérique qui n'est pas une adresse hexadécimale valide est rejetée par cette conversion, également avant tout accès réseau.
 
 *Note contextuelle : le contrôle du caractère alphanumérique est une auto-vérification interne, qui disparaît lorsque l'interpréteur est lancé en mode optimisé ; l'adresse invalide est alors rejetée par la seule conversion au format checksum.*

@@ -195,8 +195,6 @@ specified with their observable effect, in French, in the documents under
    `SCOBELIX_ALLOW_SOLC_DOWNLOAD` allows; the missing-compiler message names
    `allow_download=True` and `SCOBELIX_ALLOW_SOLC_DOWNLOAD`, not
    `--allow-solc-download`.
- * The positional argument is classified by its length only (42 characters
-   is an address).
  * Residues: `-v` accepts the logging library's names `BASIC_FORMAT` (then
    runs at INFO) and `_STYLES` (then fails with exit status 1), which are not
    levels; `--repr` and `--returns` are unreachable; `requests` is declared

@@ -73,8 +73,8 @@ Exigences détaillées dans [architecture.md](architecture.md), énoncés foncti
 | `FR-ARCH-45` | le budget par fonction ne peut être absorbé | `scobelix/decompiler.py` — classe `TimeoutInterrupt` |
 | `FR-ARCH-46` | commande `scobelix` et mode module | `pyproject.toml` — `[tool.poetry.scripts]` ; `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-47` | un argument positionnel obligatoire, code 2 sinon | `scobelix/__main__.py` — `parse_args()` |
-| `FR-ARCH-48` | nature de l'argument selon sa seule longueur | `scobelix/__main__.py` — `print_decompilation()` |
-| `FR-ARCH-49` | `-` lit l'entrée standard, puis même règle de longueur | `scobelix/__main__.py` — `print_decompilation()` |
+| `FR-ARCH-48` | nature de l'argument selon sa longueur, `--bytecode` force le bytecode | `scobelix/__main__.py` — `parse_args()`, `print_decompilation()` |
+| `FR-ARCH-49` | `-` lit l'entrée standard, toujours un bytecode, avertissement pour une forme d'adresse | `scobelix/__main__.py` — `print_decompilation()`, `_ADDRESS_RE` |
 | `FR-ARCH-50` | liste séparée par des virgules, traitement successif, arrêt à la première erreur | `scobelix/__main__.py` — `main()` |
 | `FR-ARCH-51` | option `-v`, valeur numérique ou nom défini en majuscules par la journalisation standard (dont `BASIC_FORMAT`), erreur sinon | `scobelix/__main__.py` — `main()`, `parse_args()` |
 | `FR-ARCH-52` | `--profile` écrit `scobelix.prof`, même en cas d'échec | `scobelix/__main__.py` — `main()` |

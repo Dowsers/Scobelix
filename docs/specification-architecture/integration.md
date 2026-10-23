@@ -6,7 +6,7 @@ Ce document trace chaque exigence de [../specification-fonctionnelle/integration
 
 | Exigence | Fichier — Fonction/élément | Explication |
 |---|---|---|
-| **FR-INT-01** : lecture de code déclenchée seulement par la décompilation d'une adresse | `scobelix/loader.py` — `Loader.load_addr()` ; `scobelix/__main__.py` — `print_decompilation()` | `load_addr()` n'est appelée que par `decompile_address()` ; la commande n'appelle cette dernière que pour un argument de 42 caractères. L'autre accès réseau, le téléchargement d'un compilateur, est tracé en FR-INT-10. |
+| **FR-INT-01** : lecture de code déclenchée seulement par la décompilation d'une adresse | `scobelix/loader.py` — `Loader.load_addr()` ; `scobelix/__main__.py` — `print_decompilation()` | `load_addr()` n'est appelée que par `decompile_address()` ; la commande n'appelle cette dernière que pour un argument de 42 caractères sans `--bytecode` (`as_address` dans `print_decompilation()`), jamais pour le contenu de l'entrée standard. L'autre accès réseau, le téléchargement d'un compilateur, est tracé en FR-INT-10. |
 | **FR-INT-02** : adresse alphanumérique, minuscules, checksum, avant tout accès | `scobelix/loader.py` — `Loader.load_addr()` | `assert address.isalnum()`, `address.lower()`, puis `Web3.to_checksum_address(address)`, évalué avant l'appel `get_code()`. |
 
 Note contextuelle du document source (contrôle désactivé en mode optimisé) : confirmée — le contrôle est une instruction `assert`, supprimée par l'option `-O` de l'interpréteur.

@@ -80,13 +80,15 @@ $ WEB3_PROVIDER_URI=http://localhost:7545 scobelix 0x0d94D81FD712126E7f320b5B105
 
 You can also provide the runtime bytecode (hexadecimal, `0x` optional),
 read it from stdin with `-`, or give several inputs separated by commas
-(one output each). An argument of exactly 42 characters is always taken as
-an address; invalid bytecode ends with `scobelix: error: invalid bytecode:
-...` and exit status 2.
+(one output each). An argument of exactly 42 characters is taken as an
+address unless `--bytecode` is passed (a 20-byte runtime code has that
+length); what `-` reads from stdin is always a bytecode. Invalid bytecode
+ends with `scobelix: error: invalid bytecode: ...` and exit status 2.
 
 ```console
 $ scobelix 6004600d60003960046000f30011223344
 $ scobelix - < tests/fixtures/bytecode/SimpleToken.hex
+$ scobelix --bytecode 0x602a60005260206000f3602a60005260206000f3
 ```
 
 By default this prints the pseudo-code text. The options, one example each

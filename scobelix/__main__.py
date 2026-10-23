@@ -55,7 +55,15 @@ def parse_args(args):
     )
     parser.add_argument(
         "address_or_bytecode",
-        help="An ethereum address, a comma-separated list of ethereum addresses, or `-` to read bytecode from stdin.",
+        help="A runtime bytecode (hexadecimal, 0x optional), an ethereum "
+        "address (exactly 42 characters; see --bytecode), a comma-separated "
+        "list of them, or `-` to read a bytecode from stdin.",
+    )
+    parser.add_argument(
+        "--bytecode",
+        action="store_true",
+        help="Take the argument as a bytecode even when it has the length of "
+        "an address (42 characters: a 20-byte runtime code).",
     )
     parser.add_argument(
         "--function",
@@ -411,13 +419,26 @@ def _print_verification(result):
         print(f"#   {w}", file=sys.stderr)
 
 
+_ADDRESS_RE = re.compile(r"0[xX][0-9a-fA-F]{40}")
+
+
 def print_decompilation(this_addr, args):
     function_name = args.function or None
 
     if this_addr == "-":
+        # the standard input is always a bytecode: a 20-byte runtime code
+        # has the length of an address
         this_addr = sys.stdin.read().strip()
+        as_address = False
+        if _ADDRESS_RE.fullmatch(this_addr):
+            logger.warning(
+                "the standard input is read as a bytecode of 20 bytes; to decompile the address %s, pass it as the argument",
+                this_addr,
+            )
+    else:
+        as_address = len(this_addr) == 42 and not args.bytecode
 
-    if len(this_addr) == 42:
+    if as_address:
         decompilation = decompile_address(this_addr, function_name, time_budget=args.time_budget)
     else:
         decompilation = decompile_bytecode(this_addr, function_name, time_budget=args.time_budget)
