@@ -35,7 +35,8 @@ $ pip install "scobelix[verify]"   # adds the EVM backends that --verify runs th
 ```
 
 Scobelix needs Python 3.9 or later. Windows is not supported (the
-per-function time budget relies on a POSIX alarm signal).
+per-function time budget, and the bound `--time-budget` puts on the
+Solidity generation, rely on a POSIX alarm signal).
 
 The optional `verify` extra installs the two EVM backends of the
 verification: pyrevm 0.3.7 (fast; installed only where it has prebuilt
@@ -127,16 +128,83 @@ $ scobelix --combined-json --solidity --verify --validate-solidity - < runtime.h
 
 # only the functions whose displayed name starts with a prefix
 $ scobelix --function transfer - < runtime.hex
+
+# bound the whole decompilation of each input to 240 seconds (see below)
+$ scobelix --combined-json --solidity --time-budget 240 - < runtime.hex
 ```
 
 The generation options (`--verify`, `--verify-timeout`, `--target-solc`,
 `--allow-solc-download`, `--idiom-level`, `--validate-solidity`) only take
 effect together with `--solidity`; without it they are silently ignored.
+`--bytecode` and `--time-budget` apply to every format.
 `--combined-json` takes precedence over `--solidity`, which takes precedence
 over `--json`. Other options: `-v LEVEL` (log level, INFO by default),
 `--profile` (writes `scobelix.prof` in the current directory), `--verbose`
 and `--explain` (diagnostics; `--explain` writes intermediate steps to
 stdout, so it breaks the JSON outputs).
+
+### Time budget
+
+`--time-budget SECONDS`, or the environment variable `SCOBELIX_TIME_BUDGET`
+when the option is not given (read at every invocation), is the time the
+decompilation of each input may take as a whole, the Solidity generation
+and validation included. It must be a positive, finite number of seconds
+(`2.5` or `1e3` will do); `0`, `-1`, `inf`, `nan` or `soon` end with a
+usage error and exit status 2, and an empty variable means no budget. A
+budget over 1e9 seconds (about 31 years) is accepted and amounts to no
+limit. Every input of a comma-separated list gets the whole budget,
+counted once the input is read (and, in address mode, fetched). Without a
+budget nothing changes.
+
+Under a budget:
+
+- 10 % of it, at least 5 seconds, is kept for what follows the functions
+  (storage layout, AST, text), which has no time limit of its own; every
+  function kept less simplified (`time_limited`, below) adds half the time
+  it took to that reserve, as what follows takes longer on its larger
+  trace. The discovery and every function get the smaller of their own
+  limits (the `PANORAMIX_*` variables) and what is left before that
+  reserve; the symbolic execution of a function gets the share of the
+  function's time it has without a budget (600 of 720 seconds by
+  default), so that it ends before the function is cut short; a function
+  whose simplification is cut short stays exact, flagged `time_limited`.
+- A function reached with less than a second left is not decompiled, nor
+  are the following ones: they are listed with the failures (`problems`,
+  "I failed with these"), and the Solidity generator writes them as stubs
+  that revert. A budget of 6 seconds or less leaves no time to any
+  function.
+- With `--solidity`, the generation gets what is left less 2 seconds for
+  the output: it is skipped when that is under 2 seconds and interrupted
+  when it runs longer. With `--verify`, its loop gets that time less the
+  larger of a quarter of it and 2 seconds, or its own limit
+  (`--verify-timeout`, 300 seconds by default) when that is shorter: the
+  loop stops by itself before the generation is interrupted, and writes
+  the functions it did not accept in exact form. With
+  `--validate-solidity`, the solc runs share what is left then, each
+  taking 30 seconds at most: the `--via-ir` retry after a "Stack too deep"
+  only gets what the first run left, and is not made when nothing is; the
+  validation is `skipped` when nothing is left before it.
+
+The output is partial, never absent (except with `--solidity` alone, see
+below), but it is printed only once the input is done. The budget does
+not cover the process start, reading the input or fetching the code; a
+first build of the signature database counts against it but is not
+interrupted (build it ahead of time, see below); and what follows the
+functions can outlive its reserve, the more so as the contract is large
+and its functions are kept less simplified. Measured one run at a time on
+a 16-core machine running other work, with the signature database built,
+on contracts of 22 to 24 KB of code: under a 240-second budget, the output
+came from 22 seconds before to 4 seconds after the end of the budget;
+under 120 seconds, from 10 seconds before to 21 seconds after it (the
+latter when a function is kept less simplified just before its alarm);
+under 60 seconds, 27 seconds after it (what follows the functions of
+Uniswap v4's PoolManager took 32 seconds). In these runs, the budget
+plus the larger of 10 % and 30 seconds was always enough. A caller that
+kills the process on a timeout must therefore allow such a margin; if
+the process is killed earlier, nothing is printed. Only `--combined-json`
+reports the budget (`time_budget`, below) and keeps the text and the AST
+when the generation is skipped or interrupted: with `--solidity` alone
+the command then fails with exit status 1 and prints nothing.
 
 ## Solidity reconstruction (`scobelix.solgen`)
 
@@ -228,6 +296,46 @@ always; with `--solidity`, `solidity`, `solgen_confidence`,
 `warnings`, `elapsed`, `search`); with `--validate-solidity`,
 `solgen_validation` (`status`, `errors`, `warnings`).
 
+When the generation fails (an exception, or the time budget skipping or
+interrupting it), the text and the AST are still printed, and so are the
+keys above, empty: `solidity` is `""`, `solgen_confidence` and
+`solgen_functions` are `{}`, and `solgen_warnings` holds the message, as do
+the `warnings` of `solgen_verification` and of `solgen_validation` (then
+`skipped`) when they are requested. The next key, `solgen_error`, repeats
+the message: `<ExceptionType>: <message>`, `time budget exhausted before
+the Solidity generation` or `Solidity generation interrupted by the time
+budget`. An exception of the validation alone keeps the source and sets
+`solgen_validation` to `skipped` and `solgen_error`. The traceback goes to
+the log (stderr), and the exit status stays 0. A validation the time budget
+left no time for is only `skipped`, with the warning `time budget exhausted
+before the Solidity validation`.
+
+Under a time budget, the last key is `time_budget`, for example:
+
+```json
+{"seconds": 240.0, "exhausted": true, "skipped": ["0x23b872dd", "_fallback"]}
+```
+
+`exhausted` tells whether the budget ran out before the end of the work
+or cut a step of it short: functions left out or interrupted by the time
+left to them (then failures), or whose simplification stopped at the time
+left to them; the generation skipped or interrupted; the verification
+loop stopped at the time left to it; a solc run of the validation cut
+short by the time left, or the validation skipped. `skipped` lists the
+functions it left out, which are also in `problems`. There is no
+`time_budget` key without a budget.
+
+The integers of `json` are written in full: the code copied by a
+`CODECOPY` of constant size (up to 64 KiB) becomes one integer, of more
+than 4,300 decimal digits from about 1,786 bytes on. Python 3.11 and
+later, like the security releases of earlier versions, refuse to parse
+integers that long by default: call `sys.set_int_max_str_digits(0)` before
+`json.loads`, or keep them as strings with a `parse_int`:
+
+```python
+payload = json.loads(out, parse_int=lambda s: int(s) if len(s) <= 4300 else s)
+```
+
 ### From Python
 
 ```python
@@ -238,6 +346,9 @@ decompilation = decompile_bytecode(runtime_hex)
 decompilation.text                    # the pseudo-code
 decompilation.json                    # the AST
 
+decompilation = decompile_bytecode(runtime_hex, time_budget=240)  # seconds
+decompilation.time_budget             # None without one; .seconds, .exhausted, .skipped
+
 result = generate_solidity(decompilation, verify=True, budget={"time_limit": 600})
 result.solidity                       # the source
 result.confidence                     # {"0xa9059cbb": "high", "_fallback": "medium", ...}
@@ -245,6 +356,10 @@ result.functions_json()               # the per-function table
 result.verification_json()            # the report (None when it could not run)
 validate(result).status               # "valid", "invalid" or "skipped"
 ```
+
+`time_budget` bounds the decompilation only (`SCOBELIX_TIME_BUDGET` is not
+read from Python); `generate_solidity` has no global budget, its `budget`
+only limits the verification loop.
 
 `scobelix.verify.verify(original_runtime, source, contract_name=...)`
 compares any Solidity source with a runtime bytecode on the same levels.
@@ -295,11 +410,17 @@ keccak-256 hash; nothing is looked up online.
 | `PANORAMIX_WHILES_TIMEOUT` | 600 | time limit of one function's simplification (which also stops at 75 % of the function budget; the function is then exact but not fully simplified, flagged `time_limited`) |
 | `PANORAMIX_LOADER_TIMEOUT` | 120 | time budget of the function discovery |
 | `PANORAMIX_MAX_NODE_COUNT` | 500000 | maximum number of exploration nodes per symbolic execution |
+| `SCOBELIX_TIME_BUDGET` | none | time budget of the whole decompilation of each input, in seconds, when `--time-budget` is not given; read at every invocation; a positive, finite number (anything else is a usage error, exit status 2; empty: no budget); see "Time budget" for what it bounds and the margin a caller must allow |
 | `SCOBELIX_SIGDB` | user cache directory | signature database file |
 | `SCOBELIX_SOLC_DIR` | none | solc directory searched first, and where downloads go |
 | `SCOBELIX_ALLOW_SOLC_DOWNLOAD` | refused | `1`, `true`, `yes` or `on` allows downloading a missing solc release |
 | `SCOBELIX_ABI_ROOTS`, `SCOBELIX_SIGS_OUT` | none, bundled file | input directories and output file of the regeneration tool |
 | `WEB3_PROVIDER_URI` | web3's automatic provider | the node queried in address mode |
+
+Under a time budget, the `PANORAMIX_*_TIMEOUT` limits are capped by what is
+left of it, and a value of 0 for the function, symbolic execution or
+discovery limit means "what is left" (three quarters of the function's
+time for the symbolic execution) instead of "no limit".
 
 ## Testing
 

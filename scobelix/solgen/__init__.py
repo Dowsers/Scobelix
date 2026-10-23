@@ -73,9 +73,14 @@ def generate_solidity(
                          when one is missing the result carries a warning
                          and every function is in exact form, unverified).
     target_solc          the compiler version "X.Y.Z" to write for
-                         (default: the original's when it is a 0.8 release
-                         that is available, else the newest installed 0.8,
-                         else 0.8.19).
+                         (default: the original's when it is a 0.8 release,
+                         0.8.2 or later, that is installed or may be
+                         downloaded; else the newest installed 0.8; else
+                         the original's 0.8 release even if absent; else
+                         0.8.19 - each time at least the release the
+                         constructs of the text need, e.g. 0.8.25 for
+                         transient storage).  A requested version older
+                         than that is kept, with a warning.
     idiom_level          "full": idiomatic Solidity wherever a rewriting
                          pass applies, the functions whose code carries a
                          risk flag staying in exact form; "exact": no

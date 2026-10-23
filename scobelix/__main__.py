@@ -119,8 +119,13 @@ def parse_args(args):
         default=None,
         metavar="X.Y.Z",
         help="With --solidity, the compiler version to write the source for "
-        "(default: the original's when it is an available 0.8 release, else "
-        "the newest installed 0.8).",
+        "(default: the original's when it is a 0.8 release, 0.8.2 or later, "
+        "that is installed or may be downloaded; else the newest installed "
+        "0.8; else the original's 0.8 release even if absent; else 0.8.19 - "
+        "each time at least the release the constructs of the source need, "
+        "e.g. 0.8.25 for transient storage). A requested version older than "
+        "that is kept, with a warning among the generator's warnings "
+        "(solgen_warnings of --combined-json).",
     )
     parser.add_argument(
         "--allow-solc-download",
