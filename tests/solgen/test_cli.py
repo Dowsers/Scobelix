@@ -3,6 +3,7 @@ JSON object and the keys its callers rely on, and the environments in which
 a compiler or an EVM backend is missing."""
 
 import json
+import logging
 
 import pytest
 from conftest import backend_or_skip, fixture_hex, solc_or_skip
@@ -11,6 +12,7 @@ from scobelix.__main__ import parse_args, print_decompilation
 
 RETURN_42 = "602a60005260206000f3"  # a contract that returns 42 to every call
 BASE_KEYS = {"text", "json", "solidity", "solgen_confidence", "solgen_warnings"}
+NO_VERIFICATION = {"passed": False, "levels": {}, "summary": {}, "functions": {}}
 
 
 def _run(capsys, *flags, code=RETURN_42):
@@ -188,6 +190,72 @@ def test_verify_timeout_is_the_time_limit_of_the_loop(monkeypatch, capsys):
         with pytest.raises(SystemExit):
             parse_args(["--solidity", "--verify", "--verify-timeout", value, RETURN_42])
     capsys.readouterr()
+
+
+# ---------------------------------------------------------------- generation failures
+
+
+def _failing_generator(monkeypatch, error):
+    import scobelix.solgen as solgen
+
+    def generate_solidity(decompilation, **kwargs):
+        raise error
+
+    monkeypatch.setattr(solgen, "generate_solidity", generate_solidity)
+
+
+def test_combined_json_keeps_text_and_ast_when_the_generation_fails(monkeypatch, capsys, caplog):
+    _failing_generator(monkeypatch, RuntimeError("boom"))
+    with caplog.at_level(logging.ERROR, logger="scobelix.__main__"):
+        payload, _ = _combined(capsys, "--solidity")  # no SystemExit, no exception
+    assert set(payload) == BASE_KEYS | {"solgen_functions", "solgen_error"}
+    assert payload["text"] and isinstance(payload["json"], dict) and payload["json"]["functions"]
+    assert payload["solidity"] == "" and payload["solgen_confidence"] == {} and payload["solgen_functions"] == {}
+    assert payload["solgen_warnings"] == ["RuntimeError: boom"]
+    assert payload["solgen_error"] == "RuntimeError: boom"
+    # the traceback is logged (the command sends its log to stderr), never printed on stdout
+    assert [r for r in caplog.records if r.levelno == logging.ERROR and r.exc_info and "boom" in str(r.exc_info[1])]
+
+
+def test_combined_json_keeps_its_keys_when_the_generation_fails(monkeypatch, capsys):
+    _failing_generator(monkeypatch, ValueError("no"))
+    payload, _ = _combined(capsys, "--solidity", "--verify", "--validate-solidity")
+    assert list(payload) == ["text", "json", "solidity", "solgen_confidence", "solgen_warnings", "solgen_functions",
+                             "solgen_verification", "solgen_validation", "solgen_error"]
+    assert payload["solgen_verification"] == dict(NO_VERIFICATION, warnings=["ValueError: no"])
+    assert payload["solgen_validation"] == {"status": "skipped", "errors": [], "warnings": ["ValueError: no"]}
+    assert payload["solgen_error"] == "ValueError: no"
+
+
+def test_combined_json_keeps_the_source_when_the_validation_fails(monkeypatch, capsys):
+    import scobelix.solgen as solgen
+
+    def validate(result, allow_download=None, **kwargs):
+        raise OSError("solc exploded")
+
+    monkeypatch.setattr(solgen, "validate", validate)
+    payload, _ = _combined(capsys, "--solidity", "--validate-solidity")
+    assert set(payload) == BASE_KEYS | {"solgen_functions", "solgen_validation", "solgen_error"}
+    assert "contract Decompiled {" in payload["solidity"] and payload["solgen_confidence"]
+    assert payload["solgen_validation"] == {"status": "skipped", "errors": [], "warnings": ["OSError: solc exploded"]}
+    assert payload["solgen_error"] == "OSError: solc exploded"
+
+
+def test_combined_json_survives_an_interrupted_generation(monkeypatch, capsys):
+    from scobelix.decompiler import TimeoutInterrupt
+
+    _failing_generator(monkeypatch, TimeoutInterrupt("too long"))  # a BaseException
+    payload, _ = _combined(capsys, "--solidity")
+    assert payload["text"] and payload["solidity"] == ""
+    assert payload["solgen_error"] == "TimeoutInterrupt: 'too long'"
+
+
+def test_solidity_alone_still_fails_when_the_generation_fails(monkeypatch, capsys):
+    # nothing usable to print: the exception propagates (exit status 1 under the command)
+    _failing_generator(monkeypatch, RuntimeError("boom"))
+    with pytest.raises(RuntimeError):
+        _run(capsys, "--solidity")
+    assert capsys.readouterr().out == ""
 
 
 # ---------------------------------------------------------------- missing tools

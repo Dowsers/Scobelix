@@ -7,7 +7,7 @@ import sys
 
 import coloredlogs
 
-from scobelix.decompiler import decompile_address, decompile_bytecode
+from scobelix.decompiler import TimeoutInterrupt, decompile_address, decompile_bytecode
 from scobelix.loader import InvalidBytecode
 
 logger = logging.getLogger(__name__)
@@ -163,19 +163,70 @@ def _verification_warnings(result):
     return [w for w in result.warnings if w.startswith("verification")]
 
 
+def _no_verification(warnings):
+    """The top-level keys of a verification report, with nothing in them:
+    the report of a verification that could not run at all."""
+    return {"passed": False, "levels": {}, "summary": {}, "functions": {}, "warnings": warnings}
+
+
 def _verification_json(result):
     """The verification report as JSON data; the same top-level keys with
     nothing in them when the verification could not run at all."""
     report = result.verification_json()
     if report is None:
-        report = {
-            "passed": False,
-            "levels": {},
-            "summary": {},
-            "functions": {},
-            "warnings": _verification_warnings(result),
-        }
+        report = _no_verification(_verification_warnings(result))
     return report
+
+
+def _failure(e):
+    """What the combined JSON says of an exception of the generation."""
+    return f"{type(e).__name__}: {e}"
+
+
+def _solgen_payload(decompilation, args):
+    """The keys --solidity adds to the combined JSON object.
+
+    An exception of the generation (or of the verification it runs) does
+    not lose the text and the AST already decompiled: the keys are present
+    with nothing in them, `solgen_warnings` and `solgen_error` carry the
+    message, and the traceback goes to the log. The same goes for an
+    exception of the validation, which then keeps the generated source.
+    """
+    payload = {}
+    try:
+        result = _generate_solidity(decompilation, args)
+        payload["solidity"] = result.solidity
+        payload["solgen_confidence"] = result.confidence
+        payload["solgen_warnings"] = result.warnings
+        payload["solgen_functions"] = result.functions_json()
+
+        if args.verify:
+            payload["solgen_verification"] = _verification_json(result)
+    except (Exception, TimeoutInterrupt) as e:
+        message = _failure(e)
+        logger.exception("Solidity generation failed (%s): the text and the AST are printed without it", message)
+        payload.update(solidity="", solgen_confidence={}, solgen_warnings=[message], solgen_functions={})
+        if args.verify:
+            payload["solgen_verification"] = _no_verification([message])
+        if args.validate_solidity:
+            payload["solgen_validation"] = {"status": "skipped", "errors": [], "warnings": [message]}
+        payload["solgen_error"] = message
+        return payload
+
+    if args.validate_solidity:
+        try:
+            v = _validate(result, args)
+            payload["solgen_validation"] = {
+                "status": v.status,
+                "errors": v.errors,
+                "warnings": v.warnings,
+            }
+        except (Exception, TimeoutInterrupt) as e:
+            message = _failure(e)
+            logger.exception("Solidity validation failed (%s): the source is printed unvalidated", message)
+            payload["solgen_validation"] = {"status": "skipped", "errors": [], "warnings": [message]}
+            payload["solgen_error"] = message
+    return payload
 
 
 def _print_verification(result):
@@ -216,22 +267,7 @@ def print_decompilation(this_addr, args):
         payload = {"text": decompilation.text, "json": decompilation.json}
 
         if args.solidity:
-            result = _generate_solidity(decompilation, args)
-            payload["solidity"] = result.solidity
-            payload["solgen_confidence"] = result.confidence
-            payload["solgen_warnings"] = result.warnings
-            payload["solgen_functions"] = result.functions_json()
-
-            if args.verify:
-                payload["solgen_verification"] = _verification_json(result)
-
-            if args.validate_solidity:
-                v = _validate(result, args)
-                payload["solgen_validation"] = {
-                    "status": v.status,
-                    "errors": v.errors,
-                    "warnings": v.warnings,
-                }
+            payload.update(_solgen_payload(decompilation, args))
 
         print(json.dumps(payload))
     elif args.solidity:
